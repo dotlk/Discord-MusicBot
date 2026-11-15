@@ -65,7 +65,7 @@ async function getVideoInfo(url) {
 
     const info = JSON.parse(output);
 
-    if (!info || !info.id) {
+    if (!info?.id) {
         throw new Error(
             "Não foi possível obter os dados do vídeo."
         );
@@ -73,10 +73,19 @@ async function getVideoInfo(url) {
 
     return {
         id: info.id,
-        title: info.title,
-        duration: info.duration,
-        url: info.webpage_url,
-        thumbnail: info.thumbnail,
+        title: info.title || "Sem título",
+        author:
+            info.artist ||
+            info.uploader ||
+            info.channel ||
+            "Canal desconhecido",
+        duration: info.duration || null,
+        url:
+            info.webpage_url ||
+            `https://www.youtube.com/watch?v=${info.id}`,
+        thumbnail:
+            info.thumbnail ||
+            `https://i.ytimg.com/vi/${info.id}/hqdefault.jpg`,
         requestedBy: null
     };
 }
@@ -96,7 +105,7 @@ async function getAudioStreamUrl(url) {
 
     const streamUrl = output.split(/\r?\n/)[0];
 
-    if (!streamUrl || !streamUrl.startsWith("https://")) {
+    if (!streamUrl?.startsWith("https://")) {
         throw new Error(
             "Não foi possível obter o fluxo de áudio."
         );
