@@ -1,4 +1,3 @@
-
 const {
     Events,
     MessageFlags,
@@ -751,7 +750,8 @@ module.exports = function registerInteractionEvent(client) {
                         allowedMentions: {
                             users: [interaction.user.id],
                             parse: []
-                        }
+                        },
+                        flags: MessageFlags.Ephemeral
                     });
 
                     break;
@@ -905,7 +905,8 @@ module.exports = function registerInteractionEvent(client) {
                             allowedMentions: {
                                 users: [interaction.user.id],
                                 parse: []
-                            }
+                            },
+                            flags: MessageFlags.Ephemeral
                         });
                         break;
                     }
@@ -930,7 +931,8 @@ module.exports = function registerInteractionEvent(client) {
                             allowedMentions: {
                                 users: [interaction.user.id],
                                 parse: []
-                            }
+                            },
+                            flags: MessageFlags.Ephemeral
                         });
                         break;
                     }
