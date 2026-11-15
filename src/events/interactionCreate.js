@@ -21,12 +21,16 @@ const {
 
 const {
     getQueue,
-    addTrack
+    addTrack,
+    removeTrack,
+    clearQueue,
+    prioritizeTrack
 } = require("../audio/queueManager");
 
 const {
     playNext,
-    skipTrack
+    skipTrack,
+    playPrioritizedNow
 } = require("../audio/player");
 
 const {
@@ -38,15 +42,13 @@ const {
     handleQueue
 } = require("../commands/queue");
 
-// Máximo de solicitações /play em processamento
-// simultaneamente por servidor.
+// Máximo de solicitações /play simultâneas por servidor.
 const MAX_CONCURRENT_PLAYS = 3;
 
 // guildId -> quantidade de solicitações em andamento
 const playLocks = new Map();
 
-// Impede duas inicializações simultâneas de reprodução
-// dentro do mesmo servidor.
+// Impede inicializações simultâneas da reprodução.
 const playbackStarts = new Set();
 
 function acquirePlaySlot(guildId) {
@@ -174,7 +176,7 @@ module.exports = function registerInteractionEvent(client) {
 
                     await interaction.editReply({
                         content:
-                            `🔊 Entrei no canal **${channel.name}**!`
+                            `🔊 Entrei no canal **${channel.name}** a pedido de <@${interaction.user.id}>!`
                     });
 
                     break;
@@ -248,7 +250,7 @@ module.exports = function registerInteractionEvent(client) {
                         });
                     }
 
-                    // Reserva uma das 3 vagas do servidor.
+                    // Limite de 3 processamentos por servidor.
                     if (!acquirePlaySlot(guildId)) {
                         return await interaction.reply({
                             content:
@@ -267,8 +269,8 @@ module.exports = function registerInteractionEvent(client) {
                         track.requestedBy =
                             interaction.user.id;
 
-                        // Outra solicitação pode ter conectado
-                        // o bot enquanto aguardávamos o yt-dlp.
+                        // Verifica se outra solicitação
+                        // conectou o bot durante o processamento.
                         const currentConnection =
                             getVoiceConnection(guildId);
 
@@ -298,9 +300,6 @@ module.exports = function registerInteractionEvent(client) {
                             break;
                         }
 
-                        // A fila é compartilhada por servidor.
-                        // Este trecho é síncrono, portanto as
-                        // inserções não se sobrepõem no Node.js.
                         const previousQueue =
                             getQueue(guildId);
 
@@ -323,8 +322,6 @@ module.exports = function registerInteractionEvent(client) {
                         );
 
                         if (!isPlaying) {
-                            // Reserva a inicialização antes
-                            // de iniciar o processamento.
                             playbackStarts.add(guildId);
 
                             void playNext(guildId)
@@ -353,7 +350,6 @@ module.exports = function registerInteractionEvent(client) {
                         }
 
                     } finally {
-                        // Libera somente a vaga desta solicitação.
                         releasePlaySlot(guildId);
                     }
 
@@ -365,6 +361,323 @@ module.exports = function registerInteractionEvent(client) {
                 // ==============================
                 case "queue": {
                     await handleQueue(interaction);
+                    break;
+                }
+
+                // ==============================
+                // /REMOVE
+                // ==============================
+                case "remove": {
+                    const guildId = interaction.guildId;
+
+                    const connection =
+                        getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member =
+                        await interaction.guild.members.fetch(
+                            interaction.user.id
+                        );
+
+                    if (
+                        member.voice.channelId !==
+                        connection.joinConfig.channelId
+                    ) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const position = interaction.options
+                        .getInteger("position", true);
+
+                    const queue = getQueue(guildId);
+
+                    if (
+                        !Number.isInteger(position) ||
+                        position < 1 ||
+                        !queue ||
+                        position > queue.tracks.length
+                    ) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Posição inválida. Use `/queue` para consultar as músicas disponíveis.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    // Remove somente da fila de espera.
+                    const removedTrack = removeTrack(
+                        guildId,
+                        position
+                    );
+
+                    if (!removedTrack) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Não foi possível remover essa música.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    await interaction.reply({
+                        content:
+                            `🗑️ **Música removida da fila:** ${removedTrack.title}\n` +
+                            `📋 **Posição:** ${position}\n` +
+                            `👤 **Removida por:** <@${interaction.user.id}>`
+                    });
+
+                    break;
+                }
+
+                // ==============================
+                // /CLEAR
+                // ==============================
+                case "clear": {
+                    const guildId = interaction.guildId;
+
+                    const connection =
+                        getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member =
+                        await interaction.guild.members.fetch(
+                            interaction.user.id
+                        );
+
+                    if (
+                        member.voice.channelId !==
+                        connection.joinConfig.channelId
+                    ) {
+                        return await interaction.reply({
+                            content:
+                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const queue = getQueue(guildId);
+
+                    if (!queue?.tracks?.length) {
+                        return await interaction.reply({
+                            content:
+                                "📋 A fila de espera já está vazia.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    // Botões de confirmação
+                    const confirmButton =
+                        new ButtonBuilder()
+                            .setCustomId("clear_confirm")
+                            .setLabel("Confirmar")
+                            .setEmoji("✅")
+                            .setStyle(ButtonStyle.Danger);
+
+                    const cancelButton =
+                        new ButtonBuilder()
+                            .setCustomId("clear_cancel")
+                            .setLabel("Cancelar")
+                            .setEmoji("❌")
+                            .setStyle(ButtonStyle.Secondary);
+
+                    const row =
+                        new ActionRowBuilder()
+                            .addComponents(
+                                confirmButton,
+                                cancelButton
+                            );
+
+                    // Confirmação privada
+                    const response =
+                        await interaction.reply({
+                            content:
+                                "🗑️ **Limpar a fila de reprodução?**\n\n" +
+                                `Isso removerá **${queue.tracks.length} música(s)** ` +
+                                "da fila de espera.\n" +
+                                "A música atual continuará tocando.",
+                            components: [row],
+                            flags: MessageFlags.Ephemeral,
+                            withResponse: true
+                        });
+
+                    try {
+                        const confirmation =
+                            await response.resource.message
+                                .awaitMessageComponent({
+                                    componentType:
+                                        ComponentType.Button,
+                                    filter: button =>
+                                        button.user.id ===
+                                        interaction.user.id,
+                                    time: 30000
+                                });
+
+                        if (
+                            confirmation.customId ===
+                            "clear_cancel"
+                        ) {
+                            await confirmation.update({
+                                content:
+                                    "❎ Limpeza da fila cancelada.",
+                                components: []
+                            });
+
+                            break;
+                        }
+
+                        // Verifica novamente se o usuário
+                        // permanece no mesmo canal do bot.
+                        const currentConnection =
+                            getVoiceConnection(guildId);
+
+                        const currentMember =
+                            await interaction.guild.members.fetch(
+                                interaction.user.id
+                            );
+
+                        if (
+                            !currentConnection ||
+                            currentMember.voice.channelId !==
+                            currentConnection.joinConfig.channelId
+                        ) {
+                            await confirmation.update({
+                                content:
+                                    "❌ Você não está mais no mesmo canal de voz que o bot.",
+                                components: []
+                            });
+
+                            break;
+                        }
+
+                        // Remove somente as músicas em espera.
+                        const removedCount =
+                            clearQueue(guildId);
+
+                        await confirmation.update({
+                            content:
+                                `🗑️ **Fila limpa!** ${removedCount} música(s) removida(s).\n` +
+                                "▶️ A música atual continuará tocando.",
+                            components: []
+                        });
+                        await interaction.channel.send({
+                            content:
+                                `🗑️ <@${interaction.user.id}> limpou a fila de reprodução ` +
+                                `(**${removedCount} música(s)** removida(s)).`,
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
+                        }).catch(console.error);
+
+                    } catch (error) {
+                        console.error(
+                            "Erro na confirmação do /clear:",
+                            error
+                        );
+
+                        await interaction.editReply({
+                            content:
+                                "⌛ Tempo esgotado ou não foi possível confirmar. Operação cancelada.",
+                            components: []
+                        }).catch(console.error);
+                    }
+
+                    break;
+                }
+
+                // ==============================
+                // /NEXT
+                // ==============================
+                case "next": {
+                    const guildId = interaction.guildId;
+                    const connection = getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content: "❌ Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member = await interaction.guild.members.fetch(
+                        interaction.user.id
+                    );
+
+                    if (
+                        member.voice.channelId !==
+                        connection.joinConfig.channelId
+                    ) {
+                        return await interaction.reply({
+                            content: "❌ Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const position = interaction.options.getInteger(
+                        "position",
+                        true
+                    );
+                    const playNow =
+                        interaction.options.getBoolean("playnow") ?? false;
+                    const queue = getQueue(guildId);
+
+                    if (
+                        !queue ||
+                        position < 1 ||
+                        position > queue.tracks.length
+                    ) {
+                        return await interaction.reply({
+                            content: "❌ Posição inválida. Consulte `/queue`.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    if (playNow && (!queue.currentTrack || !queue.player)) {
+                        return await interaction.reply({
+                            content: "❌ Não há uma música atual para interromper.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const result = playNow
+                        ? playPrioritizedNow(guildId, position)
+                        : prioritizeTrack(guildId, position);
+
+                    if (!result) {
+                        return await interaction.reply({
+                            content: "❌ Não foi possível reorganizar a fila.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    await interaction.reply({
+                        content: playNow
+                            ? `▶️ <@${interaction.user.id}> escolheu **${result.selected.title}** para tocar agora.\n` +
+                              `↩️ **${result.interrupted.title}** voltou para a fila e tocará desde o início.`
+                            : `⏭️ <@${interaction.user.id}> colocou **${result.selected.title}** como próxima música.`,
+                        allowedMentions: {
+                            users: [interaction.user.id],
+                            parse: []
+                        }
+                    });
+
                     break;
                 }
 
@@ -526,6 +839,7 @@ module.exports = function registerInteractionEvent(client) {
                             break;
                         }
 
+                        // Verifica novamente a conexão.
                         const currentConnection =
                             getVoiceConnection(guildId);
 
@@ -555,6 +869,15 @@ module.exports = function registerInteractionEvent(client) {
                                 "⏹️ Reprodução encerrada! Saí do canal de voz.",
                             components: []
                         });
+                        await interaction.channel.send({
+                            content:
+                                `⏹️ <@${interaction.user.id}> encerrou a reprodução ` +
+                                "e desconectou o bot do canal de voz.",
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
+                        }).catch(console.error);
 
                     } catch (error) {
                         await interaction.editReply({

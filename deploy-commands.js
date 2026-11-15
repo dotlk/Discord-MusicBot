@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 
 const {
@@ -47,12 +46,25 @@ const commands = [
         .setDescription("Remove todas as músicas da fila."),
 
     new SlashCommandBuilder()
-        .setName("stop")
-        .setDescription("Para a reprodução, limpa a fila e desconecta o bot."),
+        .setName("next")
+        .setDescription("Escolhe a próxima música ou reproduz imediatamente.")
+        .addIntegerOption(option =>
+            option
+                .setName("position")
+                .setDescription("Posição da música na fila")
+                .setMinValue(1)
+                .setRequired(true)
+        )
+        .addBooleanOption(option =>
+            option
+                .setName("playnow")
+                .setDescription("Tocar agora e colocar a música atual na fila?")
+                .setRequired(false)
+        ),
 
     new SlashCommandBuilder()
-        .setName("nowplaying")
-        .setDescription("Mostra a música que está tocando.")
+        .setName("stop")
+        .setDescription("Para a reprodução, limpa a fila e desconecta o bot.")
 ].map(command => command.toJSON());
 
 // Configuração da API do Discord
