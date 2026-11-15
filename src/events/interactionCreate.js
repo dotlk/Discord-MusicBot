@@ -851,6 +851,98 @@ module.exports = function registerInteractionEvent(client) {
                 }
 
                 // ==============================
+                // /PAUSE - Pausar ou retomar
+                // ==============================
+                case "pause": {
+                    const guildId = interaction.guildId;
+                    const connection = getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content: "❌ Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member = await interaction.guild.members.fetch(
+                        interaction.user.id
+                    );
+
+                    if (member.voice.channelId !== connection.joinConfig.channelId) {
+                        return await interaction.reply({
+                            content: "❌ Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const queue = getQueue(guildId);
+
+                    if (!queue?.player || !queue.currentTrack) {
+                        return await interaction.reply({
+                            content: "❌ Não há nenhuma música para pausar ou retomar.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const player = queue.player;
+                    const status = player.state.status;
+                    const title = queue.currentTrack.title;
+
+                    if (status === AudioPlayerStatus.Playing) {
+                        if (!player.pause()) {
+                            return await interaction.reply({
+                                content: "❌ Não foi possível pausar a música.",
+                                flags: MessageFlags.Ephemeral
+                            });
+                        }
+
+                        console.log(`⏸️ Música pausada: ${title}`);
+
+                        await interaction.reply({
+                            content:
+                                `⏸️ **Música pausada**\n${title}\n\n` +
+                                `Pausada por <@${interaction.user.id}>.`,
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
+                        });
+                        break;
+                    }
+
+                    if (
+                        status === AudioPlayerStatus.Paused ||
+                        status === AudioPlayerStatus.AutoPaused
+                    ) {
+                        if (!player.unpause()) {
+                            return await interaction.reply({
+                                content: "❌ Não foi possível retomar a música.",
+                                flags: MessageFlags.Ephemeral
+                            });
+                        }
+
+                        console.log(`▶️ Música retomada: ${title}`);
+
+                        await interaction.reply({
+                            content:
+                                `▶️ **Reprodução retomada**\n${title}\n\n` +
+                                `Retomada por <@${interaction.user.id}>.`,
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
+                        });
+                        break;
+                    }
+
+                    await interaction.reply({
+                        content: "⏳ O player não está pronto para pausar ou retomar.",
+                        flags: MessageFlags.Ephemeral
+                    });
+                    break;
+                }
+
+                // ==============================
                 // /SKIP
                 // ==============================
                 case "skip": {

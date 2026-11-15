@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const {
@@ -21,6 +22,10 @@ const commands = [
                 .setDescription("Nome da música ou link do YouTube/Spotify")
                 .setRequired(true)
         ),
+
+    new SlashCommandBuilder()
+        .setName("pause")
+        .setDescription("Pausa ou retoma a música atual."),
 
     new SlashCommandBuilder()
         .setName("skip")

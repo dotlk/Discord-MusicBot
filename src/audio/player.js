@@ -22,6 +22,11 @@ const {
     prioritizeTrack
 } = require("./queueManager");
 
+const {
+    updateMusicStatus,
+    clearMusicStatus
+} = require("../discord/musicStatus");
+
 const ytDlpPath = getYtDlpPath();
 
 const activeStreams = new Map();
@@ -151,6 +156,8 @@ function getOrCreatePlayer(guildId) {
                 `❌ Erro ao avançar fila (${guildId}):`,
                 error
             );
+
+            clearMusicStatus(guildId);
         });
     });
 
@@ -225,7 +232,9 @@ async function playTrack(
         return null;
     }
 
-    // Spotify → YouTube
+    // ==============================
+    // SPOTIFY → YOUTUBE
+    // ==============================
     if (track.spotifySearchQuery) {
         const resolved = await getVideoInfo(
             track.spotifySearchQuery
@@ -248,7 +257,9 @@ async function playTrack(
 
     cleanupStream(guildId);
 
-    // yt-dlp
+    // ==============================
+    // YT-DLP
+    // ==============================
     const ytDlp = spawn(ytDlpPath, [
         "--js-runtimes",
         `node:${process.execPath}`,
@@ -267,7 +278,9 @@ async function playTrack(
         stdio: ["ignore", "pipe", "pipe"]
     });
 
-    // FFmpeg
+    // ==============================
+    // FFMPEG
+    // ==============================
     const ffmpeg = spawn(ffmpegPath, [
         "-hide_banner",
         "-loglevel",
@@ -406,6 +419,9 @@ async function playTrack(
         }
     });
 
+    // ==============================
+    // RECURSO DE ÁUDIO
+    // ==============================
     const resource = createAudioResource(
         ffmpeg.stdout,
         {
@@ -424,6 +440,11 @@ async function playTrack(
 
     queue.player.play(resource);
 
+    // ==============================
+    // ATUALIZA ATIVIDADE DO DISCORD
+    // ==============================
+    updateMusicStatus(guildId, track);
+
     console.log(
         `▶️ Reproduzindo: ${track.title}`
     );
@@ -435,6 +456,7 @@ async function playNext(guildId) {
     const queue = getQueue(guildId);
 
     if (!queue?.player) {
+        clearMusicStatus(guildId);
         return null;
     }
 
@@ -449,6 +471,11 @@ async function playNext(guildId) {
         const track = nextTrack(guildId);
 
         if (!track) {
+            // ==============================
+            // FILA FINALIZADA
+            // ==============================
+            clearMusicStatus(guildId);
+
             console.log(
                 `⏹️ Fila finalizada: ${guildId}`
             );
@@ -519,6 +546,8 @@ function skipTrack(guildId) {
                 `❌ Erro ao pular música (${guildId}):`,
                 error
             );
+
+            clearMusicStatus(guildId);
         });
     }
 
@@ -581,6 +610,7 @@ function stopPlayer(guildId) {
 
     if (!queue?.player) {
         cleanupStream(guildId);
+        clearMusicStatus(guildId);
         return false;
     }
 
@@ -596,6 +626,11 @@ function stopPlayer(guildId) {
     });
 
     player.stop(true);
+
+    // ==============================
+    // REMOVE ATIVIDADE DO SERVIDOR
+    // ==============================
+    clearMusicStatus(guildId);
 
     console.log(
         `⏹️ Reprodução interrompida: ${guildId}`
