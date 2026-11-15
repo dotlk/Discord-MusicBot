@@ -1,15 +1,10 @@
 
 const { execFile } = require("node:child_process");
-const path = require("node:path");
 const { promisify } = require("node:util");
+const { getYtDlpPath } = require("./binaries");
 
 const execFileAsync = promisify(execFile);
-
-const YT_DLP = path.resolve(
-    __dirname,
-    "../../bin/yt-dlp.exe"
-);
-
+const YT_DLP = getYtDlpPath();
 const FFMPEG = require("ffmpeg-static");
 
 const MAX_PLAYLIST_TRACKS = 100;
@@ -26,14 +21,15 @@ function isYouTubeUrl(value) {
     try {
         const url = new URL(value);
 
-        return [
-            "youtube.com",
-            "www.youtube.com",
-            "m.youtube.com",
-            "music.youtube.com",
-            "youtu.be",
-            "www.youtu.be"
-        ].includes(url.hostname);
+        return ["http:", "https:"].includes(url.protocol) &&
+            [
+                "youtube.com",
+                "www.youtube.com",
+                "m.youtube.com",
+                "music.youtube.com",
+                "youtu.be",
+                "www.youtu.be"
+            ].includes(url.hostname);
     } catch {
         return false;
     }
@@ -43,8 +39,36 @@ function isYouTubePlaylist(value) {
     if (!isYouTubeUrl(value)) return false;
 
     const url = new URL(value);
-
     return Boolean(url.searchParams.get("list"));
+}
+
+// Identifica playlists dinâmicas do YouTube.
+function isYouTubeMix(playlistId) {
+    return typeof playlistId === "string" &&
+        playlistId.toUpperCase().startsWith("RD");
+}
+
+// Obtém o vídeo inicial do Mix.
+function getMixVideoId(url, playlistId) {
+    const parsed = new URL(url);
+
+    // Links /watch?v=...&list=...
+    const videoId = parsed.searchParams.get("v");
+
+    if (videoId) return videoId;
+
+    // Links /playlist?list=RDMM...
+    // RDMM + ID do vídeo original
+    if (playlistId.startsWith("RDMM")) {
+        return playlistId.slice(4);
+    }
+
+    // RD + ID do vídeo original
+    if (playlistId.startsWith("RD")) {
+        return playlistId.slice(2);
+    }
+
+    return null;
 }
 
 async function runYtDlp(args, timeout = 60000) {
@@ -89,7 +113,6 @@ async function getVideoInfo(query) {
     }
 
     const input = query.trim();
-
     let target = input;
 
     if (!isYouTubeUrl(input)) {
@@ -145,9 +168,33 @@ async function getPlaylistInfo(url) {
     const parsed = new URL(url);
     const playlistId = parsed.searchParams.get("list");
 
-    // Remove parâmetros do vídeo e usa somente a playlist.
-    const playlistUrl =
-        `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+    const isMix = isYouTubeMix(playlistId);
+
+    let playlistUrl;
+
+    if (isMix) {
+        const videoId = getMixVideoId(url, playlistId);
+
+        // Alguns tipos de Mix não permitem inferir
+        // o vídeo inicial somente pelo ID da playlist.
+        if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+            throw new Error(
+                "Não foi possível identificar o vídeo inicial do Mix. " +
+                "Tente copiar o link diretamente do vídeo em reprodução."
+            );
+        }
+
+        playlistUrl =
+            `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` +
+            `&list=${encodeURIComponent(playlistId)}`;
+    } else {
+        playlistUrl =
+            `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+    }
+
+    console.log(
+        `🎵 Extraindo ${isMix ? "Mix" : "playlist"}: ${playlistId}`
+    );
 
     const output = await runYtDlp([
         "--flat-playlist",
@@ -176,9 +223,16 @@ async function getPlaylistInfo(url) {
         );
     }
 
+    console.log(
+        `✅ ${tracks.length} músicas extraídas ` +
+        `(${isMix ? "Mix" : "playlist"}).`
+    );
+
     return {
         id: playlistId,
-        title: playlist.title || "Playlist do YouTube",
+        title:
+            playlist.title ||
+            (isMix ? "Mix do YouTube" : "Playlist do YouTube"),
         tracks,
         count: tracks.length,
         maxTracks: MAX_PLAYLIST_TRACKS,
@@ -214,6 +268,7 @@ async function getAudioStreamUrl(url) {
 module.exports = {
     isYouTubeUrl,
     isYouTubePlaylist,
+    isYouTubeMix,
     getVideoInfo,
     getPlaylistInfo,
     getAudioStreamUrl

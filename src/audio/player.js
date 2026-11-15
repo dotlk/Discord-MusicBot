@@ -8,9 +8,8 @@ const {
 } = require("@discordjs/voice");
 
 const { spawn } = require("node:child_process");
-const path = require("node:path");
 const ffmpegPath = require("ffmpeg-static");
-
+const { getYtDlpPath } = require("./binaries");
 const { getVideoInfo } = require("./youtube");
 
 const {
@@ -23,15 +22,10 @@ const {
     prioritizeTrack
 } = require("./queueManager");
 
-const ytDlpPath = path.join(
-    __dirname,
-    "../../bin/yt-dlp.exe"
-);
+const ytDlpPath = getYtDlpPath();
 
 const activeStreams = new Map();
 const generations = new Map();
-
-// Uma transição manual ignora o loop uma vez.
 const bypassLoop = new Set();
 
 function getGeneration(guildId) {
@@ -64,7 +58,6 @@ function terminateProcess(child) {
 
 function cleanupStream(guildId) {
     const stream = activeStreams.get(guildId);
-
     if (!stream) return;
 
     activeStreams.delete(guildId);
@@ -232,19 +225,12 @@ async function playTrack(
         return null;
     }
 
-    // ==============================
-    // SPOTIFY → YOUTUBE
-    // ==============================
-
-    // Playlists do Spotify são resolvidas
-    // somente quando chega a vez da faixa.
+    // Spotify → YouTube
     if (track.spotifySearchQuery) {
         const resolved = await getVideoInfo(
             track.spotifySearchQuery
         );
 
-        // Evita iniciar uma música antiga
-        // se a reprodução foi interrompida.
         if (
             generation !== getGeneration(guildId)
         ) {
@@ -262,10 +248,7 @@ async function playTrack(
 
     cleanupStream(guildId);
 
-    // ==============================
-    // YT-DLP
-    // ==============================
-
+    // yt-dlp
     const ytDlp = spawn(ytDlpPath, [
         "--js-runtimes",
         `node:${process.execPath}`,
@@ -284,10 +267,7 @@ async function playTrack(
         stdio: ["ignore", "pipe", "pipe"]
     });
 
-    // ==============================
-    // FFMPEG
-    // ==============================
-
+    // FFmpeg
     const ffmpeg = spawn(ffmpegPath, [
         "-hide_banner",
         "-loglevel",
@@ -526,8 +506,6 @@ function skipTrack(guildId) {
         AudioPlayerStatus.Idle;
 
     if (wasActive) {
-        // Pular manualmente não deve
-        // repetir a música atual.
         bypassLoop.add(guildId);
         player.stop(true);
     } else {
