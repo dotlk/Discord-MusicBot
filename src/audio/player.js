@@ -12,6 +12,8 @@ const {
 const ytDlpPath = path.join(__dirname, '../../bin/yt-dlp.exe');
 const activeStreams = new Map();
 const generations = new Map();
+// Uma transição manual (/skip ou /next playnow) ignora o loop uma vez.
+const bypassLoop = new Set();
 function getGeneration(guildId) { return generations.get(guildId) || 0; }
 function invalidateGeneration(guildId) {
     const next = getGeneration(guildId) + 1;
@@ -43,6 +45,22 @@ function getOrCreatePlayer(guildId) {
         const currentQueue = getQueue(guildId);
         if (!currentQueue || currentQueue.player !== player || !currentQueue.currentTrack) return;
         cleanupStream(guildId);
+
+        const manualTransition = bypassLoop.delete(guildId);
+
+        if (currentQueue.loop && !manualTransition) {
+            const generation = invalidateGeneration(guildId);
+            void playTrack(guildId, currentQueue.currentTrack, generation)
+                .catch(error => {
+                    console.error(`Erro ao repetir música (${guildId}):`, error);
+                    const latest = getQueue(guildId);
+                    if (!latest || generation !== getGeneration(guildId)) return;
+                    updateQueue(guildId, { currentTrack: null, status: 'idle' });
+                    void playNext(guildId).catch(console.error);
+                });
+            return;
+        }
+
         updateQueue(guildId, { currentTrack: null, status: 'idle' });
         void playNext(guildId).catch(error => console.error(`❌ Erro ao avançar fila (${guildId}):`, error));
     });
@@ -51,6 +69,7 @@ function getOrCreatePlayer(guildId) {
         const currentQueue = getQueue(guildId);
         if (!currentQueue || currentQueue.player !== player) return;
         cleanupStream(guildId);
+        bypassLoop.add(guildId);
         player.stop(true);
     });
     setPlayer(guildId, player);
@@ -153,7 +172,8 @@ function skipTrack(guildId) {
     cleanupStream(guildId);
     const wasActive = player.state.status !== AudioPlayerStatus.Idle;
     if (wasActive) {
-        // O listener Idle inicia exatamente a próxima faixa.
+        // Pular manualmente não deve repetir a música atual.
+        bypassLoop.add(guildId);
         player.stop(true);
     } else {
         updateQueue(guildId, { currentTrack: null, status: 'idle' });
@@ -187,6 +207,7 @@ function playPrioritizedNow(guildId, position) {
 }
 
 function stopPlayer(guildId) {
+    bypassLoop.delete(guildId);
     invalidateGeneration(guildId);
     const queue = getQueue(guildId);
     if (!queue?.player) { cleanupStream(guildId); return false; }

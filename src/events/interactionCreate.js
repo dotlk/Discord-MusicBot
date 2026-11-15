@@ -24,7 +24,8 @@ const {
     addTrack,
     removeTrack,
     clearQueue,
-    prioritizeTrack
+    prioritizeTrack,
+    toggleLoop
 } = require("../audio/queueManager");
 
 const {
@@ -107,7 +108,7 @@ module.exports = function registerInteractionEvent(client) {
             if (!interaction.inGuild()) {
                 return await interaction.reply({
                     content:
-                        "❌ Este comando só funciona em servidores.",
+                        " Este comando só funciona em servidores.",
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -128,7 +129,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!channel) {
                         return await interaction.reply({
                             content:
-                                "❌ Entre em um canal de voz primeiro!",
+                                " Entre em um canal de voz primeiro!",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -145,7 +146,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Já estou conectado a outro canal de voz.",
+                                " Já estou conectado a outro canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -165,7 +166,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Não tenho permissão para entrar ou falar nesse canal.",
+                                " Não tenho permissão para entrar ou falar nesse canal.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -176,7 +177,7 @@ module.exports = function registerInteractionEvent(client) {
 
                     await interaction.editReply({
                         content:
-                            `🔊 Entrei no canal **${channel.name}** a pedido de <@${interaction.user.id}>!`
+                            ` Entrei no canal **${channel.name}** a pedido de <@${interaction.user.id}>!`
                     });
 
                     break;
@@ -195,7 +196,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!isYouTubeUrl(query)) {
                         return await interaction.reply({
                             content:
-                                "❌ Por enquanto, envie um link válido do YouTube.",
+                                " Por enquanto, envie um link válido do YouTube.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -210,7 +211,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!channel) {
                         return await interaction.reply({
                             content:
-                                "❌ Entre em um canal de voz primeiro!",
+                                " Entre em um canal de voz primeiro!",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -225,7 +226,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -245,7 +246,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Não tenho permissão para entrar ou falar nesse canal.",
+                                " Não tenho permissão para entrar ou falar nesse canal.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -281,7 +282,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await interaction.editReply({
                                 content:
-                                    "❌ O bot foi conectado a outro canal de voz."
+                                    " O bot foi conectado a outro canal de voz."
                             });
                             break;
                         }
@@ -295,7 +296,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await interaction.editReply({
                                 content:
-                                    "❌ A conexão foi encerrada durante a solicitação."
+                                    " A conexão foi encerrada durante a solicitação."
                             });
                             break;
                         }
@@ -327,7 +328,7 @@ module.exports = function registerInteractionEvent(client) {
                             void playNext(guildId)
                                 .catch(error => {
                                     console.error(
-                                        `❌ Erro ao iniciar música (${guildId}):`,
+                                        ` Erro ao iniciar música (${guildId}):`,
                                         error
                                     );
                                 })
@@ -337,15 +338,16 @@ module.exports = function registerInteractionEvent(client) {
 
                             await interaction.editReply({
                                 content:
-                                    `▶️ **Iniciando reprodução:** ${track.title}\n` +
-                                    `⏱️ Duração: ${formatDuration(track.duration)}`
+                                    `**Tocando agora**\n` +
+                                    `${track.title}\n` +
+                                    `Duração: ${formatDuration(track.duration)}`
                             });
                         } else {
                             await interaction.editReply({
                                 content:
-                                    `➕ **Adicionado à fila:** ${track.title}\n` +
-                                    `⏱️ Duração: ${formatDuration(track.duration)}\n` +
-                                    `📋 Posição: ${position}`
+                                    `**Adicionado à fila**\n` +
+                                    `${track.title}\n` +
+                                    `Posição: ${position} · Duração: ${formatDuration(track.duration)}`
                             });
                         }
 
@@ -376,7 +378,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!connection) {
                         return await interaction.reply({
                             content:
-                                "❌ Não estou conectado a nenhum canal de voz.",
+                                " Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -392,7 +394,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -410,7 +412,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Posição inválida. Use `/queue` para consultar as músicas disponíveis.",
+                                " Posição inválida. Use `/queue` para consultar as músicas disponíveis.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -424,16 +426,16 @@ module.exports = function registerInteractionEvent(client) {
                     if (!removedTrack) {
                         return await interaction.reply({
                             content:
-                                "❌ Não foi possível remover essa música.",
+                                " Não foi possível remover essa música.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
                     await interaction.reply({
                         content:
-                            `🗑️ **Música removida da fila:** ${removedTrack.title}\n` +
-                            `📋 **Posição:** ${position}\n` +
-                            `👤 **Removida por:** <@${interaction.user.id}>`
+                            `<@${interaction.user.id}> removeu uma música da fila.\n\n` +
+                            `**Música removida**\n${removedTrack.title}\n` +
+                            `Posição anterior: ${position}`
                     });
 
                     break;
@@ -451,7 +453,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!connection) {
                         return await interaction.reply({
                             content:
-                                "❌ Não estou conectado a nenhum canal de voz.",
+                                " Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -467,7 +469,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -477,7 +479,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!queue?.tracks?.length) {
                         return await interaction.reply({
                             content:
-                                "📋 A fila de espera já está vazia.",
+                                " A fila de espera já está vazia.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -487,14 +489,12 @@ module.exports = function registerInteractionEvent(client) {
                         new ButtonBuilder()
                             .setCustomId("clear_confirm")
                             .setLabel("Confirmar")
-                            .setEmoji("✅")
                             .setStyle(ButtonStyle.Danger);
 
                     const cancelButton =
                         new ButtonBuilder()
                             .setCustomId("clear_cancel")
                             .setLabel("Cancelar")
-                            .setEmoji("❌")
                             .setStyle(ButtonStyle.Secondary);
 
                     const row =
@@ -508,7 +508,7 @@ module.exports = function registerInteractionEvent(client) {
                     const response =
                         await interaction.reply({
                             content:
-                                "🗑️ **Limpar a fila de reprodução?**\n\n" +
+                                " **Limpar a fila de reprodução?**\n\n" +
                                 `Isso removerá **${queue.tracks.length} música(s)** ` +
                                 "da fila de espera.\n" +
                                 "A música atual continuará tocando.",
@@ -535,7 +535,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await confirmation.update({
                                 content:
-                                    "❎ Limpeza da fila cancelada.",
+                                    " Limpeza da fila cancelada.",
                                 components: []
                             });
 
@@ -559,7 +559,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await confirmation.update({
                                 content:
-                                    "❌ Você não está mais no mesmo canal de voz que o bot.",
+                                    " Você não está mais no mesmo canal de voz que o bot.",
                                 components: []
                             });
 
@@ -572,14 +572,15 @@ module.exports = function registerInteractionEvent(client) {
 
                         await confirmation.update({
                             content:
-                                `🗑️ **Fila limpa!** ${removedCount} música(s) removida(s).\n` +
-                                "▶️ A música atual continuará tocando.",
+                                ` **Fila limpa!** ${removedCount} música(s) removida(s).\n` +
+                                " A música atual continuará tocando.",
                             components: []
                         });
+
                         await interaction.channel.send({
                             content:
-                                `🗑️ <@${interaction.user.id}> limpou a fila de reprodução ` +
-                                `(**${removedCount} música(s)** removida(s)).`,
+                                `<@${interaction.user.id}> limpou a fila de reprodução.\n` +
+                                `Músicas removidas: ${removedCount}`,
                             allowedMentions: {
                                 users: [interaction.user.id],
                                 parse: []
@@ -594,10 +595,56 @@ module.exports = function registerInteractionEvent(client) {
 
                         await interaction.editReply({
                             content:
-                                "⌛ Tempo esgotado ou não foi possível confirmar. Operação cancelada.",
+                                " Tempo esgotado ou não foi possível confirmar. Operação cancelada.",
                             components: []
                         }).catch(console.error);
                     }
+
+                    break;
+                }
+
+                // ==============================
+                // /LOOP
+                // ==============================
+                case "loop": {
+                    const guildId = interaction.guildId;
+                    const connection = getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content:
+                                "Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member =
+                        await interaction.guild.members.fetch(
+                            interaction.user.id
+                        );
+
+                    if (
+                        member.voice.channelId !==
+                        connection.joinConfig.channelId
+                    ) {
+                        return await interaction.reply({
+                            content:
+                                "Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const enabled = toggleLoop(guildId);
+
+                    await interaction.reply({
+                        content:
+                            `<@${interaction.user.id}> alterou a repetição da música atual.\n\n` +
+                            `**Loop: ${enabled ? "ON" : "OFF"}**`,
+                        allowedMentions: {
+                            users: [interaction.user.id],
+                            parse: []
+                        }
+                    });
 
                     break;
                 }
@@ -611,31 +658,37 @@ module.exports = function registerInteractionEvent(client) {
 
                     if (!connection) {
                         return await interaction.reply({
-                            content: "❌ Não estou conectado a nenhum canal de voz.",
+                            content:
+                                " Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    const member = await interaction.guild.members.fetch(
-                        interaction.user.id
-                    );
+                    const member =
+                        await interaction.guild.members.fetch(
+                            interaction.user.id
+                        );
 
                     if (
                         member.voice.channelId !==
                         connection.joinConfig.channelId
                     ) {
                         return await interaction.reply({
-                            content: "❌ Você precisa estar no mesmo canal de voz que eu.",
+                            content:
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    const position = interaction.options.getInteger(
-                        "position",
-                        true
-                    );
+                    const position =
+                        interaction.options.getInteger(
+                            "position",
+                            true
+                        );
+
                     const playNow =
                         interaction.options.getBoolean("playnow") ?? false;
+
                     const queue = getQueue(guildId);
 
                     if (
@@ -644,14 +697,19 @@ module.exports = function registerInteractionEvent(client) {
                         position > queue.tracks.length
                     ) {
                         return await interaction.reply({
-                            content: "❌ Posição inválida. Consulte `/queue`.",
+                            content:
+                                " Posição inválida. Consulte `/queue`.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    if (playNow && (!queue.currentTrack || !queue.player)) {
+                    if (
+                        playNow &&
+                        (!queue.currentTrack || !queue.player)
+                    ) {
                         return await interaction.reply({
-                            content: "❌ Não há uma música atual para interromper.",
+                            content:
+                                " Não há uma música atual para interromper.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -662,16 +720,19 @@ module.exports = function registerInteractionEvent(client) {
 
                     if (!result) {
                         return await interaction.reply({
-                            content: "❌ Não foi possível reorganizar a fila.",
+                            content:
+                                " Não foi possível reorganizar a fila.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
                     await interaction.reply({
                         content: playNow
-                            ? `▶️ <@${interaction.user.id}> escolheu **${result.selected.title}** para tocar agora.\n` +
-                              `↩️ **${result.interrupted.title}** voltou para a fila e tocará desde o início.`
-                            : `⏭️ <@${interaction.user.id}> colocou **${result.selected.title}** como próxima música.`,
+                            ? `<@${interaction.user.id}> iniciou uma reprodução imediata.\n\n` +
+                              `**Tocando agora**\n${result.selected.title}\n\n` +
+                              `**Devolvida à fila**\n${result.interrupted.title}`
+                            : `<@${interaction.user.id}> alterou a próxima música.\n\n` +
+                              `**Próxima música**\n${result.selected.title}`,
                         allowedMentions: {
                             users: [interaction.user.id],
                             parse: []
@@ -693,7 +754,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!connection) {
                         return await interaction.reply({
                             content:
-                                "❌ Não estou conectado a nenhum canal de voz.",
+                                " Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -709,7 +770,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -719,7 +780,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!queue?.currentTrack) {
                         return await interaction.reply({
                             content:
-                                "❌ Não há nenhuma música tocando.",
+                                " Não há nenhuma música tocando.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -733,17 +794,17 @@ module.exports = function registerInteractionEvent(client) {
                     if (!skipTrack(guildId)) {
                         return await interaction.reply({
                             content:
-                                "❌ Não foi possível pular a música.",
+                                " Não foi possível pular a música.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
                     await interaction.reply({
                         content: nextTitle
-                            ? `⏭️ **Pulada:** ${currentTitle}\n` +
-                              `▶️ **Próxima:** ${nextTitle}`
-                            : `⏭️ **Pulada:** ${currentTitle}\n` +
-                              "⏹️ Não há mais músicas na fila."
+                            ? `**Música pulada**\n${currentTitle}\n\n` +
+                              `**Tocando em seguida**\n${nextTitle}`
+                            : `**Música pulada**\n${currentTitle}\n\n` +
+                              "A fila de reprodução terminou."
                     });
 
                     break;
@@ -761,7 +822,7 @@ module.exports = function registerInteractionEvent(client) {
                     if (!connection) {
                         return await interaction.reply({
                             content:
-                                "❌ Não estou conectado a nenhum canal de voz.",
+                                " Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -777,7 +838,7 @@ module.exports = function registerInteractionEvent(client) {
                     ) {
                         return await interaction.reply({
                             content:
-                                "❌ Você precisa estar no mesmo canal de voz que eu.",
+                                " Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -786,14 +847,12 @@ module.exports = function registerInteractionEvent(client) {
                         new ButtonBuilder()
                             .setCustomId("stop_confirm")
                             .setLabel("Confirmar")
-                            .setEmoji("✅")
                             .setStyle(ButtonStyle.Danger);
 
                     const cancelButton =
                         new ButtonBuilder()
                             .setCustomId("stop_cancel")
                             .setLabel("Cancelar")
-                            .setEmoji("❌")
                             .setStyle(ButtonStyle.Secondary);
 
                     const row =
@@ -806,7 +865,7 @@ module.exports = function registerInteractionEvent(client) {
                     const response =
                         await interaction.reply({
                             content:
-                                "⏹️ **Encerrar reprodução?**\n\n" +
+                                " **Encerrar reprodução?**\n\n" +
                                 "Isso interromperá a música, limpará a fila " +
                                 "e desconectará o bot do canal de voz.",
                             components: [row],
@@ -832,7 +891,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await confirmation.update({
                                 content:
-                                    "❎ Operação cancelada.",
+                                    " Operação cancelada.",
                                 components: []
                             });
 
@@ -855,7 +914,7 @@ module.exports = function registerInteractionEvent(client) {
                         ) {
                             await confirmation.update({
                                 content:
-                                    "❌ Você não está mais no mesmo canal de voz que o bot.",
+                                    " Você não está mais no mesmo canal de voz que o bot.",
                                 components: []
                             });
 
@@ -866,13 +925,14 @@ module.exports = function registerInteractionEvent(client) {
 
                         await confirmation.update({
                             content:
-                                "⏹️ Reprodução encerrada! Saí do canal de voz.",
+                                " Reprodução encerrada! Saí do canal de voz.",
                             components: []
                         });
+
                         await interaction.channel.send({
                             content:
-                                `⏹️ <@${interaction.user.id}> encerrou a reprodução ` +
-                                "e desconectou o bot do canal de voz.",
+                                `<@${interaction.user.id}> encerrou a reprodução.\n` +
+                                "O bot saiu do canal de voz.",
                             allowedMentions: {
                                 users: [interaction.user.id],
                                 parse: []
@@ -882,7 +942,7 @@ module.exports = function registerInteractionEvent(client) {
                     } catch (error) {
                         await interaction.editReply({
                             content:
-                                "⌛ Tempo esgotado. Operação cancelada.",
+                                " Tempo esgotado. Operação cancelada.",
                             components: []
                         }).catch(console.error);
                     }
@@ -896,7 +956,7 @@ module.exports = function registerInteractionEvent(client) {
                 default: {
                     await interaction.reply({
                         content:
-                            `🚧 O comando /${command} está em desenvolvimento!`,
+                            ` O comando /${command} está em desenvolvimento!`,
                         flags: MessageFlags.Ephemeral
                     });
                 }
@@ -904,7 +964,7 @@ module.exports = function registerInteractionEvent(client) {
 
         } catch (error) {
             console.error(
-                "❌ Erro ao executar comando:",
+                " Erro ao executar comando:",
                 error
             );
 
@@ -914,13 +974,13 @@ module.exports = function registerInteractionEvent(client) {
             ) {
                 await interaction.editReply({
                     content:
-                        "❌ Ocorreu um erro ao executar o comando.",
+                        " Ocorreu um erro ao executar o comando.",
                     components: []
                 }).catch(console.error);
             } else {
                 await interaction.reply({
                     content:
-                        "❌ Ocorreu um erro ao executar o comando.",
+                        " Ocorreu um erro ao executar o comando.",
                     flags: MessageFlags.Ephemeral
                 }).catch(console.error);
             }

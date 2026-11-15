@@ -63,6 +63,10 @@ const commands = [
         ),
 
     new SlashCommandBuilder()
+        .setName("loop")
+        .setDescription("Ativa ou desativa a repetição da música atual."),
+
+    new SlashCommandBuilder()
         .setName("stop")
         .setDescription("Para a reprodução, limpa a fila e desconecta o bot.")
 ].map(command => command.toJSON());

@@ -17,14 +17,15 @@ function writeQueue(guildId, queue) {
     fs.mkdirSync(getQueueDir(guildId), { recursive: true });
     const data = {
         guildId: String(guildId), tracks: queue.tracks,
-        currentTrack: queue.currentTrack, status: queue.status
+        currentTrack: queue.currentTrack, status: queue.status,
+        loop: queue.loop === true
     };
     fs.writeFileSync(getQueuePath(guildId), JSON.stringify(data, null, 2), 'utf8');
     return data;
 }
 function createQueue(guildId) {
     if (!readQueue(guildId)) {
-        writeQueue(guildId, { tracks: [], currentTrack: null, status: 'idle' });
+        writeQueue(guildId, { tracks: [], currentTrack: null, status: 'idle', loop: false });
         console.log(`🎵 Fila criada para o servidor ${guildId}`);
     }
     return getQueue(guildId);
@@ -50,10 +51,10 @@ function addTracks(guildId, tracks) {
 }
 function nextTrack(guildId) {
     const queue = readQueue(guildId);
-    if (!queue) return null;
-    const track = queue.tracks.shift() || null;
+    if (!queue || queue.tracks.length === 0) return null;
+    const track = queue.tracks.shift();
     queue.currentTrack = track;
-    queue.status = track ? 'playing' : 'idle';
+    queue.status = 'playing';
     writeQueue(guildId, queue);
     return track;
 }
@@ -62,7 +63,6 @@ function removeTrack(guildId, position) {
     if (!queue || !Number.isInteger(position) || position < 1 || position > queue.tracks.length) return null;
     const [removed] = queue.tracks.splice(position - 1, 1);
     writeQueue(guildId, queue);
-    console.log(`➖ Música removida: ${removed.title}`);
     return removed;
 }
 function clearQueue(guildId) {
@@ -71,28 +71,32 @@ function clearQueue(guildId) {
     const count = queue.tracks.length;
     queue.tracks = [];
     writeQueue(guildId, queue);
-    console.log(`🗑️ ${count} músicas removidas da fila.`);
     return count;
 }
-
-// Move uma música em espera para o início da fila.
-// Com playNow, recoloca a música atual logo depois dela.
-// A interrupção efetiva do player é feita por skipTrack().
 function prioritizeTrack(guildId, position, playNow = false) {
     const queue = readQueue(guildId);
     if (!queue || !Number.isInteger(position) || position < 1 || position > queue.tracks.length) return null;
     const [selected] = queue.tracks.splice(position - 1, 1);
-    queue.tracks.unshift(selected);
     const interrupted = playNow ? queue.currentTrack : null;
+    queue.tracks.unshift(selected);
     if (interrupted) queue.tracks.splice(1, 0, interrupted);
     writeQueue(guildId, queue);
     return { selected, interrupted };
 }
-
-function getCurrentTrack(guildId) { return readQueue(guildId)?.currentTrack || null; }
-function updateQueue(guildId, changes) {
+function toggleLoop(guildId) {
+    createQueue(guildId);
     const queue = readQueue(guildId);
-    if (!queue) return null;
+    queue.loop = queue.loop !== true;
+    writeQueue(guildId, queue);
+    return queue.loop;
+}
+
+function getCurrentTrack(guildId) {
+    return getQueue(guildId)?.currentTrack || null;
+}
+function updateQueue(guildId, changes) {
+    createQueue(guildId);
+    const queue = readQueue(guildId);
     for (const field of ['tracks', 'currentTrack', 'status']) {
         if (Object.prototype.hasOwnProperty.call(changes, field)) queue[field] = changes[field];
     }
@@ -111,6 +115,6 @@ function deleteQueue(guildId) {
 }
 module.exports = {
     createQueue, getQueue, addTrack, addTracks, nextTrack,
-    removeTrack, clearQueue, prioritizeTrack, getCurrentTrack,
+    removeTrack, clearQueue, prioritizeTrack, toggleLoop, getCurrentTrack,
     updateQueue, setConnection, setPlayer, deleteQueue
 };

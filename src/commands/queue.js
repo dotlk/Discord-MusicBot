@@ -1,4 +1,3 @@
-
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -171,7 +170,8 @@ function buildQueueEmbed(guildId, requestedPage) {
         text:
             `Página ${page + 1}/${totalPages}` +
             `  •  ${tracks.length} na fila` +
-            `  •  ${formatDuration(totalDuration)} restantes`
+            `  •  ${formatDuration(totalDuration)} restantes` +
+            `  •  Loop: ${queue?.loop ? "ON" : "OFF"}`
     });
 
     return {
