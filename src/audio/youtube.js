@@ -12,12 +12,13 @@ const YT_DLP = path.resolve(
 
 const FFMPEG = require("ffmpeg-static");
 
+const MAX_PLAYLIST_TRACKS = 100;
+
 const BASE_ARGS = [
     "--js-runtimes",
     `node:${process.execPath}`,
     "--ffmpeg-location",
     FFMPEG,
-    "--no-playlist",
     "--no-warnings"
 ];
 
@@ -38,13 +39,21 @@ function isYouTubeUrl(value) {
     }
 }
 
-async function runYtDlp(args) {
+function isYouTubePlaylist(value) {
+    if (!isYouTubeUrl(value)) return false;
+
+    const url = new URL(value);
+
+    return Boolean(url.searchParams.get("list"));
+}
+
+async function runYtDlp(args, timeout = 60000) {
     const { stdout } = await execFileAsync(
         YT_DLP,
         [...BASE_ARGS, ...args],
         {
-            timeout: 60000,
-            maxBuffer: 10 * 1024 * 1024,
+            timeout,
+            maxBuffer: 30 * 1024 * 1024,
             windowsHide: true
         }
     );
@@ -52,27 +61,13 @@ async function runYtDlp(args) {
     return stdout.trim();
 }
 
-async function getVideoInfo(url) {
-    if (!isYouTubeUrl(url)) {
-        throw new Error("URL do YouTube inválida.");
-    }
+function normalizeTrack(info) {
+    if (!info?.id) return null;
 
-    const output = await runYtDlp([
-        "--no-download",
-        "--dump-single-json",
-        url
-    ]);
-
-    const info = JSON.parse(output);
-
-    if (!info?.id) {
-        throw new Error(
-            "Não foi possível obter os dados do vídeo."
-        );
-    }
+    const id = info.id;
 
     return {
-        id: info.id,
+        id,
         title: info.title || "Sem título",
         author:
             info.artist ||
@@ -80,13 +75,114 @@ async function getVideoInfo(url) {
             info.channel ||
             "Canal desconhecido",
         duration: info.duration || null,
-        url:
-            info.webpage_url ||
-            `https://www.youtube.com/watch?v=${info.id}`,
+        url: `https://www.youtube.com/watch?v=${id}`,
         thumbnail:
             info.thumbnail ||
-            `https://i.ytimg.com/vi/${info.id}/hqdefault.jpg`,
+            `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
         requestedBy: null
+    };
+}
+
+async function getVideoInfo(query) {
+    if (typeof query !== "string" || !query.trim()) {
+        throw new Error("Informe um nome ou link de música.");
+    }
+
+    const input = query.trim();
+
+    let target = input;
+
+    if (!isYouTubeUrl(input)) {
+        try {
+            const url = new URL(input);
+
+            if (["http:", "https:"].includes(url.protocol)) {
+                throw new Error(
+                    "Por enquanto, somente links do YouTube são aceitos."
+                );
+            }
+        } catch (error) {
+            if (
+                error.message ===
+                "Por enquanto, somente links do YouTube são aceitos."
+            ) {
+                throw error;
+            }
+        }
+
+        target = `ytsearch1:${input}`;
+    }
+
+    const output = await runYtDlp([
+        "--no-playlist",
+        "--no-download",
+        "--dump-single-json",
+        target
+    ]);
+
+    const result = JSON.parse(output);
+
+    const info = Array.isArray(result.entries)
+        ? result.entries[0]
+        : result;
+
+    const track = normalizeTrack(info);
+
+    if (!track) {
+        throw new Error(
+            "Não foi possível encontrar essa música."
+        );
+    }
+
+    return track;
+}
+
+async function getPlaylistInfo(url) {
+    if (!isYouTubePlaylist(url)) {
+        throw new Error("Link de playlist inválido.");
+    }
+
+    const parsed = new URL(url);
+    const playlistId = parsed.searchParams.get("list");
+
+    // Remove parâmetros do vídeo e usa somente a playlist.
+    const playlistUrl =
+        `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+
+    const output = await runYtDlp([
+        "--flat-playlist",
+        "--playlist-end",
+        String(MAX_PLAYLIST_TRACKS),
+        "--no-download",
+        "--dump-single-json",
+        playlistUrl
+    ], 120000);
+
+    const playlist = JSON.parse(output);
+
+    if (!Array.isArray(playlist.entries)) {
+        throw new Error(
+            "Não foi possível obter as músicas da playlist."
+        );
+    }
+
+    const tracks = playlist.entries
+        .map(normalizeTrack)
+        .filter(Boolean);
+
+    if (!tracks.length) {
+        throw new Error(
+            "A playlist está vazia ou não possui vídeos disponíveis."
+        );
+    }
+
+    return {
+        id: playlistId,
+        title: playlist.title || "Playlist do YouTube",
+        tracks,
+        count: tracks.length,
+        maxTracks: MAX_PLAYLIST_TRACKS,
+        truncated: playlist.entries.length >= MAX_PLAYLIST_TRACKS
     };
 }
 
@@ -96,6 +192,7 @@ async function getAudioStreamUrl(url) {
     }
 
     const output = await runYtDlp([
+        "--no-playlist",
         "--no-download",
         "--format",
         "bestaudio/best",
@@ -116,6 +213,8 @@ async function getAudioStreamUrl(url) {
 
 module.exports = {
     isYouTubeUrl,
+    isYouTubePlaylist,
     getVideoInfo,
+    getPlaylistInfo,
     getAudioStreamUrl
 };
