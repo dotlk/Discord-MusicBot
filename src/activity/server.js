@@ -17,6 +17,115 @@ const REDIRECT_URI = "https://127.0.0.1";
 
 const clients = new Set();
 
+const THUMBNAIL_HOSTS = new Set([
+    "i.ytimg.com",
+    "img.youtube.com",
+    "yt3.ggpht.com"
+]);
+
+const MAX_THUMBNAIL_SIZE = 5 * 1024 * 1024;
+
+async function proxyThumbnail(req, res) {
+    try {
+        const requestUrl = new URL(req.url, "http://localhost");
+        const imageUrl = requestUrl.searchParams.get("url");
+
+        if (!imageUrl) {
+            res.writeHead(400);
+            res.end("URL da imagem ausente.");
+            return;
+        }
+
+        let parsedUrl;
+
+        try {
+            parsedUrl = new URL(imageUrl);
+        } catch {
+            res.writeHead(400);
+            res.end("URL inválida.");
+            return;
+        }
+
+        if (
+            parsedUrl.protocol !== "https:" ||
+            !THUMBNAIL_HOSTS.has(parsedUrl.hostname)
+        ) {
+            res.writeHead(403);
+            res.end("Domínio de imagem não permitido.");
+            return;
+        }
+
+        const response = await fetch(parsedUrl, {
+            signal: AbortSignal.timeout(10000),
+            redirect: "error",
+            headers: {
+                "User-Agent": "Mozilla/5.0"
+            }
+        });
+
+        if (!response.ok) {
+            res.writeHead(502);
+            res.end("Não foi possível obter a imagem.");
+            return;
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+
+        const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+        ];
+
+        if (!allowedTypes.includes(contentType.split(";")[0].trim())) {
+            res.writeHead(415);
+            res.end("Formato de imagem não permitido.");
+            return;
+        }
+
+        const contentLength = Number(
+            response.headers.get("content-length") || 0
+        );
+
+        if (contentLength > MAX_THUMBNAIL_SIZE) {
+            res.writeHead(413);
+            res.end("Imagem muito grande.");
+            return;
+        }
+
+        const imageBuffer = Buffer.from(
+            await response.arrayBuffer()
+        );
+
+        if (imageBuffer.length > MAX_THUMBNAIL_SIZE) {
+            res.writeHead(413);
+            res.end("Imagem muito grande.");
+            return;
+        }
+
+        res.writeHead(200, {
+            "Content-Type": contentType,
+            "Content-Length": imageBuffer.length,
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff"
+        });
+
+        res.end(imageBuffer);
+
+    } catch (error) {
+        console.error(
+            "[Activity] Erro ao carregar thumbnail:",
+            error.message
+        );
+
+        if (!res.headersSent) {
+            res.writeHead(502);
+            res.end("Erro ao carregar imagem.");
+        }
+    }
+}
+
 async function exchangeCode(code) {
     const body = new URLSearchParams({
         client_id: process.env.CLIENT_ID,
@@ -70,7 +179,11 @@ function serializeTrack(track) {
 
     return {
         title: track.title || "Desconhecido",
-        artist: track.author || track.artist || track.uploader || "Artista desconhecido",
+        artist:
+            track.author ||
+            track.artist ||
+            track.uploader ||
+            "Artista desconhecido",
         duration: track.duration || null,
         thumbnail: track.thumbnail || null
     };
@@ -123,7 +236,9 @@ async function validateVoiceAccess(client, guildId, userId) {
         !voiceState?.channelId ||
         voiceState.channelId !== connection.joinConfig.channelId
     ) {
-        throw new Error("Você precisa estar no mesmo canal de voz que o bot.");
+        throw new Error(
+            "Você precisa estar no mesmo canal de voz que o bot."
+        );
     }
 
     return connection;
@@ -152,7 +267,9 @@ async function handleAction(client, socket, message) {
             ) {
                 queue.player.unpause();
             } else {
-                throw new Error("O player não está pronto para essa ação.");
+                throw new Error(
+                    "O player não está pronto para essa ação."
+                );
             }
 
             break;
@@ -180,7 +297,9 @@ async function handleAction(client, socket, message) {
             const { fromIndex, toIndex } = message;
 
             if (!moveTrack(guildId, fromIndex, toIndex)) {
-                throw new Error("Não foi possível reorganizar a fila.");
+                throw new Error(
+                    "Não foi possível reorganizar a fila."
+                );
             }
 
             break;
@@ -209,7 +328,9 @@ function broadcast(guildId) {
 
 function startActivityServer(client) {
     if (!process.env.CLIENT_ID || !process.env.CLIENT_SECRET) {
-        throw new Error("CLIENT_ID e CLIENT_SECRET são necessários para a Activity.");
+        throw new Error(
+            "CLIENT_ID e CLIENT_SECRET são necessários para a Activity."
+        );
     }
 
     const PORT = Number(process.env.ACTIVITY_PORT || 3001);
@@ -224,6 +345,14 @@ function startActivityServer(client) {
             return;
         }
 
+        if (
+            req.method === "GET" &&
+            req.url.startsWith("/api/thumbnail")
+        ) {
+            await proxyThumbnail(req, res);
+            return;
+        }
+
         if (req.method === "POST" && req.url === "/api/token") {
             try {
                 let rawBody = "";
@@ -231,7 +360,7 @@ function startActivityServer(client) {
                 for await (const chunk of req) {
                     rawBody += chunk;
 
-                    if (rawBody.length > 10_000) {
+                    if (rawBody.length > 10000) {
                         throw new Error("Requisição muito grande.");
                     }
                 }
@@ -252,8 +381,12 @@ function startActivityServer(client) {
                 res.end(JSON.stringify({
                     access_token: tokenData.access_token
                 }));
+
             } catch (error) {
-                console.error("[Activity] OAuth:", error.message);
+                console.error(
+                    "[Activity] OAuth:",
+                    error.message
+                );
 
                 res.writeHead(400, {
                     "Content-Type": "application/json",
@@ -261,7 +394,8 @@ function startActivityServer(client) {
                 });
 
                 res.end(JSON.stringify({
-                    error: "Não foi possível autenticar com o Discord."
+                    error:
+                        "Não foi possível autenticar com o Discord."
                 }));
             }
 
@@ -295,7 +429,9 @@ function startActivityServer(client) {
                         typeof guildId !== "string" ||
                         !/^\d{17,20}$/.test(guildId)
                     ) {
-                        throw new Error("Dados de autenticação inválidos.");
+                        throw new Error(
+                            "Dados de autenticação inválidos."
+                        );
                     }
 
                     const user = await getDiscordUser(accessToken);
@@ -323,6 +459,7 @@ function startActivityServer(client) {
                 if (message.type === "action") {
                     await handleAction(client, socket, message);
                 }
+
             } catch (error) {
                 send(socket, "error", {
                     message: error.message || "Erro interno."
@@ -335,11 +472,13 @@ function startActivityServer(client) {
         });
 
         socket.on("error", error => {
-            console.error("[Activity] WebSocket:", error.message);
+            console.error(
+                "[Activity] WebSocket:",
+                error.message
+            );
         });
     });
 
-    // Sincroniza mudanças feitas pelos comandos tradicionais do bot.
     const syncInterval = setInterval(() => {
         const guilds = new Set(
             [...clients]
@@ -353,7 +492,9 @@ function startActivityServer(client) {
     }, 1500);
 
     server.listen(PORT, () => {
-        console.log(`[Activity] Servidor iniciado na porta ${PORT}.`);
+        console.log(
+            `[Activity] Servidor iniciado na porta ${PORT}.`
+        );
     });
 
     server.on("close", () => clearInterval(syncInterval));

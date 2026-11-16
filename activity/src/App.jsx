@@ -18,6 +18,12 @@ function formatDuration(duration) {
     return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+function getThumbnailUrl(src) {
+    if (!src) return null;
+
+    return `/api/thumbnail?url=${encodeURIComponent(src)}`;
+}
+
 function TrackImage({ src, className = "" }) {
     const [failed, setFailed] = useState(false);
 
@@ -25,7 +31,9 @@ function TrackImage({ src, className = "" }) {
         setFailed(false);
     }, [src]);
 
-    if (!src || failed) {
+    const thumbnailUrl = getThumbnailUrl(src);
+
+    if (!thumbnailUrl || failed) {
         return (
             <div className={className}>
                 <span>♫</span>
@@ -36,7 +44,7 @@ function TrackImage({ src, className = "" }) {
     return (
         <img
             className={className}
-            src={src}
+            src={thumbnailUrl}
             alt="Capa da música"
             onError={() => setFailed(true)}
         />
@@ -49,8 +57,14 @@ export default function App() {
     const [current, setCurrent] = useState(null);
     const [queue, setQueue] = useState([]);
     const [playing, setPlaying] = useState(false);
+    const [playbackStatus, setPlaybackStatus] = useState("idle");
+    const [processingNext, setProcessingNext] = useState(false);
     const [loop, setLoop] = useState(false);
     const [dragged, setDragged] = useState(null);
+
+    const processingNextRef = useRef(false);
+    const skipSawStopRef = useRef(false);
+    const skipTrackKeyRef = useRef(null);
 
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState("");
@@ -101,7 +115,9 @@ export default function App() {
                 });
 
                 if (!auth) {
-                    throw new Error("Falha na autenticação com o Discord.");
+                    throw new Error(
+                        "Falha na autenticação com o Discord."
+                    );
                 }
 
                 if (!discordSdk.guildId) {
@@ -129,7 +145,7 @@ export default function App() {
                     }));
                 });
 
-                socket.addEventListener("message", (event) => {
+                socket.addEventListener("message", event => {
                     const message = JSON.parse(event.data);
 
                     if (message.type === "authenticated") {
@@ -139,14 +155,50 @@ export default function App() {
                     }
 
                     if (message.type === "state") {
-                        setCurrent(message.currentTrack);
-                        setQueue(message.tracks || []);
+                        const nextTrack = message.currentTrack;
+                        const nextStatus = message.status || "idle";
+                        const nextQueue = message.tracks || [];
+
+                        setCurrent(nextTrack);
+                        setQueue(nextQueue);
                         setLoop(message.loop === true);
-                        setPlaying(message.status === "playing");
+                        setPlaybackStatus(nextStatus);
+                        setPlaying(nextStatus === "playing");
+
+                        if (processingNextRef.current) {
+                            const nextTrackKey = nextTrack
+                                ? `${nextTrack.title}|${nextTrack.artist}`
+                                : null;
+
+                            if (nextStatus !== "playing") {
+                                skipSawStopRef.current = true;
+                            }
+
+                            if (
+                                !nextTrack ||
+                                (
+                                    nextStatus === "playing" &&
+                                    (
+                                        skipSawStopRef.current ||
+                                        nextTrackKey !== skipTrackKeyRef.current
+                                    )
+                                )
+                            ) {
+                                processingNextRef.current = false;
+                                skipSawStopRef.current = false;
+                                setProcessingNext(false);
+                            }
+                        }
                     }
 
                     if (message.type === "error") {
-                        setError(message.message || "Erro no servidor.");
+                        setError(
+                            message.message || "Erro no servidor."
+                        );
+
+                        processingNextRef.current = false;
+                        skipSawStopRef.current = false;
+                        setProcessingNext(false);
                     }
                 });
 
@@ -155,12 +207,17 @@ export default function App() {
                         setConnected(false);
                         setLoading(false);
                         setError("Conexão com o bot encerrada.");
+
+                        processingNextRef.current = false;
+                        setProcessingNext(false);
                     }
                 });
 
                 socket.addEventListener("error", () => {
                     if (!cancelled) {
-                        setError("Não foi possível conectar ao servidor do bot.");
+                        setError(
+                            "Não foi possível conectar ao servidor do bot."
+                        );
                         setLoading(false);
                     }
                 });
@@ -169,7 +226,9 @@ export default function App() {
                 console.error("[Activity]", err);
 
                 if (!cancelled) {
-                    setError(err.message || "Erro ao iniciar a Activity.");
+                    setError(
+                        err.message || "Erro ao iniciar a Activity."
+                    );
                     setLoading(false);
                 }
             }
@@ -201,6 +260,25 @@ export default function App() {
             action,
             ...extra
         }));
+    }
+
+    function handleNext() {
+        const socket = socketRef.current;
+
+        if (!socket || socket.readyState !== WebSocket.OPEN || !current) {
+            return;
+        }
+
+        processingNextRef.current = true;
+        skipSawStopRef.current = false;
+
+        skipTrackKeyRef.current = current
+            ? `${current.title}|${current.artist}`
+            : null;
+
+        setProcessingNext(true);
+
+        sendAction("next");
     }
 
     function moveTrack(targetIndex) {
@@ -268,7 +346,7 @@ export default function App() {
 
                     <button
                         className="control-button"
-                        onClick={() => sendAction("next")}
+                        onClick={handleNext}
                         disabled={!connected || !current}
                         title="Próxima música"
                     >
@@ -279,9 +357,15 @@ export default function App() {
                 <div className="playback-status">
                     {loading
                         ? "Conectando..."
-                        : playing
-                            ? "Reproduzindo"
-                            : "Pausado"}
+                        : processingNext
+                            ? "Processando..."
+                            : playbackStatus === "playing"
+                                ? "Reproduzindo"
+                                : playbackStatus === "paused"
+                                    ? "Pausado"
+                                    : current
+                                        ? "Preparando reprodução..."
+                                        : "Aguardando reprodução"}
 
                     {loop && " · Repetição ativada"}
                 </div>
@@ -321,7 +405,7 @@ export default function App() {
                                 }`}
                                 draggable={connected}
                                 onDragStart={() => setDragged(index)}
-                                onDragOver={(event) => event.preventDefault()}
+                                onDragOver={event => event.preventDefault()}
                                 onDrop={() => moveTrack(index)}
                                 onDragEnd={() => setDragged(null)}
                             >

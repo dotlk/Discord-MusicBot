@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
 
         server: {
             allowedHosts: [
-                'sara-videos-kids-dow.trycloudflare.com'
+                env.ACTIVITY_ALLOWED_HOST
             ],
 
             proxy: {
