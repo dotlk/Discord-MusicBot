@@ -1,7 +1,11 @@
 
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
-const { getYtDlpPath } = require("./binaries");
+
+const {
+    getYtDlpPath,
+    getYtDlpEnv
+} = require("./binaries");
 
 const execFileAsync = promisify(execFile);
 const YT_DLP = getYtDlpPath();
@@ -78,7 +82,8 @@ async function runYtDlp(args, timeout = 60000) {
         {
             timeout,
             maxBuffer: 30 * 1024 * 1024,
-            windowsHide: true
+            windowsHide: true,
+            env: getYtDlpEnv()
         }
     );
 

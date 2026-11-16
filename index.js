@@ -1,13 +1,15 @@
+
 require("dotenv").config();
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-// As filas persistidas pertencem à execução anterior. Limpa apenas
-// o conteúdo da pasta temp antes de conectar ao Discord.
+// Limpa as pastas temporárias deixadas pela execução anterior.
 function cleanTempOnStartup() {
     const tempDir = path.resolve(__dirname, "temp");
+    const ytDlpTempDir = path.resolve(__dirname, ".yt-dlp-tmp");
 
+    // Limpa as filas persistidas.
     fs.mkdirSync(tempDir, { recursive: true });
 
     for (const entry of fs.readdirSync(tempDir)) {
@@ -17,13 +19,20 @@ function cleanTempOnStartup() {
         });
     }
 
+    // Remove completamente a pasta temporária do yt-dlp.
+    fs.rmSync(ytDlpTempDir, {
+        recursive: true,
+        force: true
+    });
+
     console.log("🧹 Pasta temp limpa na inicialização.");
+    console.log("🧹 Pasta .yt-dlp-tmp limpa na inicialização.");
 }
 
 try {
     cleanTempOnStartup();
 } catch (error) {
-    console.error("❌ Falha ao limpar a pasta temp:", error);
+    console.error("❌ Falha ao limpar pastas temporárias:", error);
     process.exit(1);
 }
 

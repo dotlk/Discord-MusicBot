@@ -9,7 +9,12 @@ const {
 
 const { spawn } = require("node:child_process");
 const ffmpegPath = require("ffmpeg-static");
-const { getYtDlpPath } = require("./binaries");
+
+const {
+    getYtDlpPath,
+    getYtDlpEnv
+} = require("./binaries");
+
 const { getVideoInfo } = require("./youtube");
 
 const {
@@ -25,7 +30,7 @@ const {
 const {
     updateMusicStatus,
     clearMusicStatus
-} = require("../discord/musicstatus");
+} = require("../discord/musicStatus");
 
 const ytDlpPath = getYtDlpPath();
 
@@ -275,7 +280,8 @@ async function playTrack(
         track.url
     ], {
         windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
+        env: getYtDlpEnv()
     });
 
     // ==============================
