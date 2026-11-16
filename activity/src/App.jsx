@@ -62,6 +62,13 @@ export default function App() {
     const [loop, setLoop] = useState(false);
     const [dragged, setDragged] = useState(null);
 
+    const [progressMs, setProgressMs] = useState(0);
+    const [seekPreviewMs, setSeekPreviewMs] = useState(null);
+
+    const progressBaseRef = useRef(0);
+    const progressReceivedAtRef = useRef(Date.now());
+    const seekingRef = useRef(false);
+
     const processingNextRef = useRef(false);
     const skipSawStopRef = useRef(false);
     const skipTrackKeyRef = useRef(null);
@@ -69,6 +76,20 @@ export default function App() {
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
+
+    // Atualiza o progresso localmente entre as mensagens do servidor.
+    useEffect(() => {
+        if (playbackStatus !== "playing") return;
+
+        const interval = setInterval(() => {
+            const elapsed = Date.now() - progressReceivedAtRef.current;
+            const nextProgress = progressBaseRef.current + elapsed;
+
+            setProgressMs(nextProgress);
+        }, 100);
+
+        return () => clearInterval(interval);
+    }, [playbackStatus]);
 
     useEffect(() => {
         let cancelled = false;
@@ -165,6 +186,22 @@ export default function App() {
                         setPlaybackStatus(nextStatus);
                         setPlaying(nextStatus === "playing");
 
+                        const nextPosition = Number(message.positionMs);
+
+                        progressBaseRef.current =
+                            Number.isFinite(nextPosition)
+                                ? Math.max(0, nextPosition)
+                                : 0;
+
+                        progressReceivedAtRef.current = Date.now();
+                        setProgressMs(progressBaseRef.current);
+
+                        if (!nextTrack) {
+                            progressBaseRef.current = 0;
+                            setProgressMs(0);
+                            setSeekPreviewMs(null);
+                        }
+
                         if (processingNextRef.current) {
                             const nextTrackKey = nextTrack
                                 ? `${nextTrack.title}|${nextTrack.artist}`
@@ -188,6 +225,25 @@ export default function App() {
                                 skipSawStopRef.current = false;
                                 setProcessingNext(false);
                             }
+                        }
+                    }
+
+                    if (message.type === "progress") {
+                        const nextPosition = Number(message.positionMs);
+
+                        if (Number.isFinite(nextPosition)) {
+                            progressBaseRef.current = Math.max(
+                                0,
+                                nextPosition
+                            );
+
+                            progressReceivedAtRef.current = Date.now();
+                            setProgressMs(progressBaseRef.current);
+                        }
+
+                        if (message.status) {
+                            setPlaybackStatus(message.status);
+                            setPlaying(message.status === "playing");
                         }
                     }
 
@@ -262,6 +318,74 @@ export default function App() {
         }));
     }
 
+    function getSeekPosition(event) {
+        const durationMs = Number(current?.duration) * 1000;
+
+        if (!Number.isFinite(durationMs) || durationMs <= 0) {
+            return null;
+        }
+
+        const rect = event.currentTarget.getBoundingClientRect();
+
+        if (rect.width <= 0) return null;
+
+        const percentage = Math.max(
+            0,
+            Math.min(1, (event.clientX - rect.left) / rect.width)
+        );
+
+        return percentage * durationMs;
+    }
+
+    function handleSeekStart(event) {
+        if (!connected || !current || !Number(current.duration)) return;
+
+        event.preventDefault();
+
+        const position = getSeekPosition(event);
+
+        if (position === null) return;
+
+        seekingRef.current = true;
+        setSeekPreviewMs(position);
+
+        event.currentTarget.setPointerCapture(event.pointerId);
+    }
+
+    function handleSeekMove(event) {
+        if (!seekingRef.current) return;
+
+        const position = getSeekPosition(event);
+
+        if (position !== null) {
+            setSeekPreviewMs(position);
+        }
+    }
+
+    function handleSeekEnd(event) {
+        if (!seekingRef.current) return;
+
+        const position = getSeekPosition(event);
+
+        seekingRef.current = false;
+        setSeekPreviewMs(null);
+
+        if (position === null) return;
+
+        progressBaseRef.current = position;
+        progressReceivedAtRef.current = Date.now();
+        setProgressMs(position);
+
+        sendAction("seek", {
+            positionSeconds: position / 1000
+        });
+    }
+
+    function handleSeekCancel() {
+        seekingRef.current = false;
+        setSeekPreviewMs(null);
+    }
+
     function handleNext() {
         const socket = socketRef.current;
 
@@ -292,6 +416,16 @@ export default function App() {
         setDragged(null);
     }
 
+    const durationMs = Number(current?.duration) * 1000;
+
+    const displayedProgressMs =
+        seekPreviewMs !== null ? seekPreviewMs : progressMs;
+
+    const progressPercentage =
+        Number.isFinite(durationMs) && durationMs > 0
+            ? Math.min((displayedProgressMs / durationMs) * 100, 100)
+            : 0;
+
     return (
         <main className="app">
             <section className="now-playing">
@@ -304,17 +438,55 @@ export default function App() {
 
                 <div className="track-info">
                     <h2>{current?.title || "Nenhuma música"}</h2>
-                    <p>{current?.artist || "Aguardando reprodução"}</p>
+                    <p>{current?.artist || "Aguardando música"}</p>
                 </div>
 
-                <div className="progress">
-                    <div className="progress-bar">
-                        <div className="progress-fill" />
+                <div className={`progress ${seekPreviewMs !== null ? "is-seeking" : ""}`}>
+                    <div
+                        className="progress-bar"
+                        role="slider"
+                        aria-label="Posição da música"
+                        aria-valuemin={0}
+                        aria-valuemax={Number.isFinite(durationMs) ? durationMs : 0}
+                        aria-valuenow={displayedProgressMs}
+                        aria-disabled={!connected || !current}
+                        tabIndex={connected && current ? 0 : -1}
+                        style={{
+                            cursor: connected && current ? "pointer" : "default",
+                            touchAction: "none"
+                        }}
+                        onPointerDown={handleSeekStart}
+                        onPointerMove={handleSeekMove}
+                        onPointerUp={handleSeekEnd}
+                        onPointerCancel={handleSeekCancel}
+                    >
+                        <div
+                            className="progress-fill"
+                            style={{
+                                width: `${progressPercentage}%`
+                            }}
+                        />
+
+                        {seekPreviewMs !== null && (
+                            <div
+                                className="progress-marker"
+                                style={{ left: `${progressPercentage}%` }}
+                            >
+                                <span>
+                                    {formatDuration(seekPreviewMs / 1000)}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="progress-time">
-                        <span>--:--</span>
-                        <span>{formatDuration(current?.duration)}</span>
+                        <span>
+                            {formatDuration(displayedProgressMs / 1000)}
+                        </span>
+
+                        <span>
+                            {formatDuration(current?.duration)}
+                        </span>
                     </div>
                 </div>
 
@@ -340,7 +512,15 @@ export default function App() {
                                 <i />
                             </span>
                         ) : (
-                            "▶"
+                            <svg
+                                className="play-icon"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="white"
+                                aria-hidden="true"
+                            >
+                                <path d="m8.462 2.38 12.11 7.064c.204.135.395.276.567.451.41.416.692.952.806 1.525.167.847-.05 1.72-.565 2.408a3.1 3.1 0 0 1-.868.764L8.445 21.63c-.217.112-.44.211-.677.271a3.04 3.04 0 0 1-2.096-.21 3.03 3.03 0 0 1-1.493-1.669A3.2 3.2 0 0 1 4 19.011l.001-14.088a3.2 3.2 0 0 1 .211-1.031 3 3 0 0 1 1.421-1.563 3.04 3.04 0 0 1 1.905-.281c.327.06.631.177.924.332" />
+                            </svg>
                         )}
                     </button>
 
@@ -365,7 +545,7 @@ export default function App() {
                                     ? "Pausado"
                                     : current
                                         ? "Preparando reprodução..."
-                                        : "Aguardando reprodução"}
+                                        : "Aguardando música"}
 
                     {loop && " · Repetição ativada"}
                 </div>

@@ -37,6 +37,10 @@ const ytDlpPath = getYtDlpPath();
 const activeStreams = new Map();
 const generations = new Map();
 const bypassLoop = new Set();
+const playbackPositions = new Map();
+
+const seekRequests = new Map();
+const seekSequences = new Map();
 
 function getGeneration(guildId) {
     return generations.get(guildId) || 0;
@@ -46,6 +50,17 @@ function invalidateGeneration(guildId) {
     const next = getGeneration(guildId) + 1;
     generations.set(guildId, next);
     return next;
+}
+
+function getPlaybackPosition(guildId) {
+    const state = playbackPositions.get(guildId);
+
+    if (!state) return 0;
+
+    return Math.floor(
+        state.offsetMs +
+        (state.resource?.playbackDuration || 0)
+    );
 }
 
 function terminateProcess(child) {
@@ -66,11 +81,9 @@ function terminateProcess(child) {
     }
 }
 
-function cleanupStream(guildId) {
-    const stream = activeStreams.get(guildId);
+// Encerra um fluxo específico sem alterar o Map
+function destroyStream(stream) {
     if (!stream) return;
-
-    activeStreams.delete(guildId);
 
     stream.ytDlp.stdout?.unpipe(
         stream.ffmpeg.stdin
@@ -82,6 +95,15 @@ function cleanupStream(guildId) {
 
     terminateProcess(stream.ytDlp);
     terminateProcess(stream.ffmpeg);
+}
+
+// Encerra o fluxo atualmente registrado
+function cleanupStream(guildId) {
+    const stream = activeStreams.get(guildId);
+    if (!stream) return;
+
+    activeStreams.delete(guildId);
+    destroyStream(stream);
 }
 
 function getOrCreatePlayer(guildId) {
@@ -98,6 +120,8 @@ function getOrCreatePlayer(guildId) {
     });
 
     player.on(AudioPlayerStatus.Idle, () => {
+        playbackPositions.delete(guildId);
+
         const currentQueue = getQueue(guildId);
 
         if (
@@ -212,7 +236,9 @@ function attachPlayer(guildId, connection) {
 async function playTrack(
     guildId,
     track,
-    generation
+    generation,
+    startSeconds = 0,
+    preserveExistingStream = false
 ) {
     const queue = getQueue(guildId);
 
@@ -235,6 +261,15 @@ async function playTrack(
         generation !== getGeneration(guildId)
     ) {
         return null;
+    }
+
+    if (
+        !Number.isFinite(startSeconds) ||
+        startSeconds < 0
+    ) {
+        throw new Error(
+            "Posição de reprodução inválida."
+        );
     }
 
     // ==============================
@@ -260,12 +295,25 @@ async function playTrack(
         };
     }
 
-    cleanupStream(guildId);
+    if (
+        generation !== getGeneration(guildId)
+    ) {
+        return null;
+    }
+
+    // Guarda o fluxo anterior durante o seek
+    const previousStream = preserveExistingStream
+        ? activeStreams.get(guildId)
+        : null;
+
+    if (!preserveExistingStream) {
+        cleanupStream(guildId);
+    }
 
     // ==============================
     // YT-DLP
     // ==============================
-    const ytDlp = spawn(ytDlpPath, [
+    const ytDlpArgs = [
         "--js-runtimes",
         `node:${process.execPath}`,
         "--ffmpeg-location",
@@ -274,15 +322,31 @@ async function playTrack(
         "--no-warnings",
         "--no-progress",
         "--format",
-        "bestaudio/best",
+        "bestaudio/best"
+    ];
+
+    if (startSeconds > 0) {
+        ytDlpArgs.push(
+            "--download-sections",
+            `*${startSeconds}-`
+        );
+    }
+
+    ytDlpArgs.push(
         "--output",
         "-",
         track.url
-    ], {
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: getYtDlpEnv()
-    });
+    );
+
+    const ytDlp = spawn(
+        ytDlpPath,
+        ytDlpArgs,
+        {
+            windowsHide: true,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: getYtDlpEnv()
+        }
+    );
 
     // ==============================
     // FFMPEG
@@ -439,12 +503,27 @@ async function playTrack(
 
     resource.volume.setVolume(0.7);
 
+    playbackPositions.set(guildId, {
+        offsetMs: startSeconds * 1000,
+        resource
+    });
+
     updateQueue(guildId, {
         currentTrack: track,
         status: "playing"
     });
 
+    // Substitui diretamente o recurso anterior
     queue.player.play(resource);
+
+    // O novo recurso assumiu a reprodução.
+    // Agora podemos encerrar o fluxo anterior.
+    if (
+        previousStream &&
+        previousStream !== stream
+    ) {
+        destroyStream(previousStream);
+    }
 
     // ==============================
     // ATUALIZA ATIVIDADE DO DISCORD
@@ -466,10 +545,14 @@ async function playNext(guildId) {
         return null;
     }
 
+    // Invalida qualquer seek pendente
+    seekRequests.delete(guildId);
+
     const generation =
         invalidateGeneration(guildId);
 
     cleanupStream(guildId);
+    playbackPositions.delete(guildId);
 
     while (
         generation === getGeneration(guildId)
@@ -477,9 +560,6 @@ async function playNext(guildId) {
         const track = nextTrack(guildId);
 
         if (!track) {
-            // ==============================
-            // FILA FINALIZADA
-            // ==============================
             clearMusicStatus(guildId);
 
             console.log(
@@ -531,8 +611,12 @@ function skipTrack(guildId) {
     const skippedTitle =
         queue.currentTrack.title;
 
+    // Invalida qualquer seek pendente
+    seekRequests.delete(guildId);
+
     invalidateGeneration(guildId);
     cleanupStream(guildId);
+    playbackPositions.delete(guildId);
 
     const wasActive =
         player.state.status !==
@@ -562,6 +646,124 @@ function skipTrack(guildId) {
     );
 
     return true;
+}
+
+async function seekTrack(guildId, positionSeconds) {
+    const queue = getQueue(guildId);
+
+    if (
+        !queue?.player ||
+        !queue.currentTrack ||
+        !Number.isFinite(positionSeconds) ||
+        positionSeconds < 0
+    ) {
+        return false;
+    }
+
+    const player = queue.player;
+    const track = queue.currentTrack;
+
+    const previousSeek =
+        seekRequests.get(guildId);
+
+    if (
+        player.state.status === AudioPlayerStatus.Idle &&
+        !previousSeek
+    ) {
+        return false;
+    }
+
+    if (
+        Number.isFinite(track.duration) &&
+        track.duration > 0 &&
+        positionSeconds >= track.duration
+    ) {
+        return false;
+    }
+
+    // Preserva o estado original de pausa
+    const wasPaused = previousSeek
+        ? previousSeek.wasPaused
+        : player.state.status === AudioPlayerStatus.Paused;
+
+    // Identificador exclusivo desta solicitação
+    const seekId =
+        (seekSequences.get(guildId) || 0) + 1;
+
+    seekSequences.set(guildId, seekId);
+
+    seekRequests.set(guildId, {
+        id: seekId,
+        wasPaused
+    });
+
+    // Invalida as operações anteriores
+    const generation =
+        invalidateGeneration(guildId);
+
+    try {
+        // Não usamos player.stop().
+        // O novo recurso substitui diretamente o atual.
+        await playTrack(
+            guildId,
+            track,
+            generation,
+            positionSeconds,
+            true
+        );
+
+        const latestSeek =
+            seekRequests.get(guildId);
+
+        // Só o seek mais recente pode finalizar
+        if (
+            !latestSeek ||
+            latestSeek.id !== seekId ||
+            generation !== getGeneration(guildId)
+        ) {
+            return false;
+        }
+
+        if (wasPaused) {
+            player.pause();
+        }
+
+        seekRequests.delete(guildId);
+
+        console.log(
+            `⏩ Seek: ${track.title} → ${positionSeconds}s`
+        );
+
+        return true;
+    } catch (error) {
+        const latestSeek =
+            seekRequests.get(guildId);
+
+        // Um seek antigo não pode interferir no atual
+        if (
+            !latestSeek ||
+            latestSeek.id !== seekId ||
+            generation !== getGeneration(guildId)
+        ) {
+            return false;
+        }
+
+        console.error(
+            `Erro ao reposicionar música (${guildId}):`,
+            error
+        );
+
+        seekRequests.delete(guildId);
+
+        cleanupStream(guildId);
+        playbackPositions.delete(guildId);
+
+        updateQueue(guildId, {
+            status: "idle"
+        });
+
+        return false;
+    }
 }
 
 function playPrioritizedNow(
@@ -610,12 +812,17 @@ function playPrioritizedNow(
 
 function stopPlayer(guildId) {
     bypassLoop.delete(guildId);
+
+    // Invalida qualquer seek pendente
+    seekRequests.delete(guildId);
+
     invalidateGeneration(guildId);
 
     const queue = getQueue(guildId);
 
     if (!queue?.player) {
         cleanupStream(guildId);
+        playbackPositions.delete(guildId);
         clearMusicStatus(guildId);
         return false;
     }
@@ -624,6 +831,7 @@ function stopPlayer(guildId) {
 
     setPlayer(guildId, null);
     cleanupStream(guildId);
+    playbackPositions.delete(guildId);
 
     updateQueue(guildId, {
         tracks: [],
@@ -652,5 +860,7 @@ module.exports = {
     playNext,
     skipTrack,
     playPrioritizedNow,
-    stopPlayer
+    stopPlayer,
+    seekTrack,
+    getPlaybackPosition
 };

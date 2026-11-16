@@ -56,18 +56,14 @@ function isYouTubeMix(playlistId) {
 function getMixVideoId(url, playlistId) {
     const parsed = new URL(url);
 
-    // Links /watch?v=...&list=...
     const videoId = parsed.searchParams.get("v");
 
     if (videoId) return videoId;
 
-    // Links /playlist?list=RDMM...
-    // RDMM + ID do vídeo original
     if (playlistId.startsWith("RDMM")) {
         return playlistId.slice(4);
     }
 
-    // RD + ID do vídeo original
     if (playlistId.startsWith("RD")) {
         return playlistId.slice(2);
     }
@@ -180,8 +176,6 @@ async function getPlaylistInfo(url) {
     if (isMix) {
         const videoId = getMixVideoId(url, playlistId);
 
-        // Alguns tipos de Mix não permitem inferir
-        // o vídeo inicial somente pelo ID da playlist.
         if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
             throw new Error(
                 "Não foi possível identificar o vídeo inicial do Mix. " +
@@ -255,19 +249,49 @@ async function getAudioStreamUrl(url) {
         "--no-download",
         "--format",
         "bestaudio/best",
-        "--get-url",
+        "--print",
+        "%(url)s",
+        "--print",
+        "%(http_headers)j",
         url
     ]);
 
-    const streamUrl = output.split(/\r?\n/)[0];
+    const lines = output.split(/\r?\n/).filter(Boolean);
 
-    if (!streamUrl?.startsWith("https://")) {
+    if (lines.length < 2) {
+        throw new Error(
+            "Não foi possível obter a URL e os cabeçalhos do áudio."
+        );
+    }
+
+    const streamUrl = lines[0];
+
+    if (!streamUrl.startsWith("https://")) {
         throw new Error(
             "Não foi possível obter o fluxo de áudio."
         );
     }
 
-    return streamUrl;
+    let headers;
+
+    try {
+        headers = JSON.parse(lines[1]);
+    } catch {
+        throw new Error(
+            "Não foi possível interpretar os cabeçalhos do áudio."
+        );
+    }
+
+    if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+        throw new Error(
+            "Os cabeçalhos HTTP do áudio são inválidos."
+        );
+    }
+
+    return {
+        url: streamUrl,
+        headers
+    };
 }
 
 module.exports = {

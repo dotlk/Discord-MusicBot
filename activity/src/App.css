@@ -1,6 +1,12 @@
 
+html,
+body,
 #root {
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
 }
 
 * {
@@ -8,7 +14,6 @@
 }
 
 body {
-  margin: 0;
   background: #101014;
   color: #f5f5f7;
   font-family: Inter, system-ui, sans-serif;
@@ -20,9 +25,16 @@ button {
 }
 
 .app {
-  width: min(100% - 40px, 620px);
-  margin: 0 auto;
-  padding: 20px 0;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 18px 28px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  overflow: hidden;
 }
 
 .section-label {
@@ -32,8 +44,17 @@ button {
   letter-spacing: 1.5px;
 }
 
+/* Tocando agora */
 .now-playing {
-  padding: 20px 0 30px;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
 }
 
@@ -49,9 +70,15 @@ button {
   box-shadow: 0 12px 45px #8257e533;
 }
 
+.track-info {
+  width: 100%;
+  min-width: 0;
+}
+
 .track-info h2 {
   margin: 0;
   font-size: 23px;
+  overflow-wrap: anywhere;
 }
 
 .track-info p {
@@ -66,8 +93,9 @@ button {
 }
 
 .progress-bar {
+  position: relative;
   height: 5px;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 10px;
   background: #303039;
 }
@@ -77,6 +105,37 @@ button {
   height: 100%;
   border-radius: 10px;
   background: #9a75f5;
+  pointer-events: none;
+}
+
+.progress-marker {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 25px;
+  background: white;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.progress-marker span {
+  position: absolute;
+  top: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #8257e5;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.progress.is-seeking .progress-time {
+  margin-top: 48px;
 }
 
 .progress-time {
@@ -116,11 +175,20 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: #8257e5;
   color: white;
-  font-size: 20px;
+  flex-shrink: 0;
   transition: background 0.2s;
+}
+
+.play-icon {
+  display: block;
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
 }
 
 .play-button:hover,
@@ -150,8 +218,20 @@ button {
   font-size: 12px;
 }
 
+/* Fila */
 .queue-section {
-  padding: 25px;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  width: min(100%, 440px);
+  height: min(100%, 680px);
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid #292930;
   border-radius: 16px;
   background: #19191f;
@@ -184,12 +264,19 @@ button {
   color: white;
   font-size: 12px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .queue-list {
+  min-height: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #555560 transparent;
 }
 
 .queue-item {
@@ -290,10 +377,12 @@ img.mini-art {
 }
 
 footer {
-  padding: 25px 0 0;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding: 9px 0 0;
   color: #777782;
   text-align: center;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 footer span {
@@ -301,13 +390,341 @@ footer span {
   color: #9a75f5;
 }
 
-@media (max-width: 480px) {
+/* Janela compacta */
+@media (max-width: 700px) {
   .app {
-    width: min(100% - 24px, 620px);
-    padding-top: 20px;
+    padding: 10px 12px 7px;
+    grid-template-columns: minmax(0, 52fr) minmax(0, 48fr);
+  }
+
+  .track-art,
+  img.track-art {
+    width: 105px;
+    height: 105px;
+  }
+
+  .track-art {
+    margin: 14px auto;
+    font-size: 46px;
+  }
+
+  .track-info h2 {
+    font-size: 18px;
+  }
+
+  .track-info p {
+    font-size: 11px;
+  }
+
+  .progress {
+    width: min(95%, 320px);
+    margin: 16px auto;
+  }
+
+  .controls {
+    gap: 17px;
+  }
+
+  .control-button {
+    font-size: 22px;
+  }
+
+  .play-button {
+    width: 46px;
+    height: 46px;
+  }
+
+  .playback-status {
+    margin-top: 9px;
+    font-size: 11px;
   }
 
   .queue-section {
-    padding: 17px 12px;
+    width: min(100%, 390px);
+    padding: 14px 12px;
+  }
+
+  .queue-header {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .queue-header h2 {
+    font-size: 15px;
+  }
+
+  .queue-header p {
+    font-size: 11px;
+  }
+
+  .shuffle-button {
+    padding: 8px 9px;
+    font-size: 11px;
+  }
+
+  .queue-item {
+    gap: 8px;
+    padding: 8px 5px;
+  }
+
+  .mini-art,
+  img.mini-art {
+    width: 32px;
+    height: 32px;
+  }
+
+  .queue-track-info strong {
+    font-size: 11px;
+  }
+
+  .queue-track-info span {
+    font-size: 10px;
+  }
+
+  .queue-number,
+  .duration {
+    font-size: 10px;
+  }
+
+  .drag-handle {
+    font-size: 16px;
+  }
+
+  .queue-hint {
+    margin-top: 8px;
+    font-size: 9px;
+  }
+}
+
+/* Janelas com pouca altura */
+@media (max-height: 650px) {
+  .app {
+    padding-top: 7px;
+    padding-bottom: 5px;
+  }
+
+  .track-art,
+  img.track-art {
+    width: 90px;
+    height: 90px;
+  }
+
+  .track-art {
+    margin: 9px auto;
+    font-size: 40px;
+  }
+
+  .progress {
+    margin: 12px auto;
+  }
+
+  .playback-status {
+    margin-top: 7px;
+  }
+
+  .queue-section {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .queue-header {
+    margin-bottom: 8px;
+  }
+
+  .queue-item {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .queue-hint {
+    margin-top: 7px;
+  }
+}
+
+/* Janelas muito pequenas */
+@media (max-width: 480px) {
+  .app {
+    padding: 8px;
+    grid-template-columns: minmax(0, 48fr) minmax(0, 52fr);
+  }
+
+  /* Player centralizado na coluna esquerda */
+  .now-playing {
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    padding: 0 5px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .track-art,
+  img.track-art {
+    width: 65px;
+    height: 65px;
+  }
+
+  .track-art {
+    margin: 7px auto;
+    font-size: 30px;
+  }
+
+  .track-info h2 {
+    font-size: 14px;
+    overflow-wrap: normal;
+  }
+
+  .track-info p {
+    font-size: 10px;
+  }
+
+  .progress {
+    width: 95%;
+    margin: 10px auto;
+  }
+
+  /* Controles ocultos na janelinha */
+  .controls,
+  .playback-status,
+  .shuffle-button {
+    display: none;
+  }
+
+  /* Fila */
+  .queue-section {
+    width: 100%;
+    max-width: none;
+    padding: 8px 7px;
+    border-radius: 13px;
+  }
+
+  .queue-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 5px;
+  }
+
+  /* Remove "Fila de reprodução" */
+  .queue-header h2 {
+    display: none;
+  }
+
+  /* Mantém "PRÓXIMAS MÚSICAS" em destaque */
+  .queue-header .section-label {
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .queue-header p {
+    margin: 2px 0 0;
+    font-size: 9px;
+  }
+
+  /* Lista mais compacta */
+  .queue-list {
+    gap: 2px;
+  }
+
+  .queue-item {
+    min-height: 36px;
+    gap: 5px;
+    padding: 4px 2px;
+  }
+
+  .queue-number {
+    width: 11px;
+    font-size: 9px;
+  }
+
+  .mini-art,
+  img.mini-art {
+    width: 23px;
+    height: 23px;
+  }
+
+  .queue-track-info {
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .queue-track-info strong,
+  .queue-track-info span {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .queue-track-info strong {
+    font-size: 10px;
+  }
+
+  .queue-track-info span {
+    font-size: 9px;
+  }
+
+  .duration {
+    font-size: 9px;
+  }
+
+  .drag-handle {
+    font-size: 13px;
+  }
+
+  .queue-hint {
+    display: none;
+  }
+
+  footer {
+    display: none;
+  }
+}
+
+/* Janelas muito baixas */
+@media (max-height: 430px) {
+  .track-art,
+  img.track-art {
+    width: 55px;
+    height: 55px;
+  }
+
+  .track-art {
+    margin: 5px auto;
+    font-size: 25px;
+  }
+
+  .progress {
+    margin: 8px auto;
+  }
+
+  .controls,
+  .playback-status,
+  .shuffle-button,
+  footer {
+    display: none;
+  }
+
+  .play-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .queue-section {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+
+  .queue-header {
+    margin-bottom: 5px;
+  }
+
+  .queue-item {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .queue-hint {
+    display: none;
   }
 }

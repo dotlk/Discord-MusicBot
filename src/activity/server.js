@@ -10,12 +10,17 @@ const {
     moveTrack
 } = require("../audio/queueManager");
 
-const { skipTrack } = require("../audio/player");
+const {
+    skipTrack,
+    seekTrack,
+    getPlaybackPosition
+} = require("../audio/player");
 
 const DISCORD_API = "https://discord.com/api/v10";
 const REDIRECT_URI = "https://127.0.0.1";
 
 const clients = new Set();
+const lastSnapshots = new Map();
 
 const THUMBNAIL_HOSTS = new Set([
     "i.ytimg.com",
@@ -197,7 +202,8 @@ function getSnapshot(guildId) {
             currentTrack: null,
             tracks: [],
             loop: false,
-            status: "idle"
+            status: "idle",
+            positionMs: 0
         };
     }
 
@@ -218,7 +224,8 @@ function getSnapshot(guildId) {
         currentTrack: serializeTrack(queue.currentTrack),
         tracks: queue.tracks.map(serializeTrack),
         loop: queue.loop === true,
-        status
+        status,
+        positionMs: getPlaybackPosition(guildId)
     };
 }
 
@@ -305,15 +312,51 @@ async function handleAction(client, socket, message) {
             break;
         }
 
+        case "seek": {
+            const { positionSeconds } = message;
+
+            if (
+                typeof positionSeconds !== "number" ||
+                !Number.isFinite(positionSeconds) ||
+                positionSeconds < 0
+            ) {
+                throw new Error("Posição inválida.");
+            }
+
+            const success = await seekTrack(
+                guildId,
+                positionSeconds
+            );
+
+            if (!success) {
+                throw new Error(
+                    "Não foi possível mudar a posição da música."
+                );
+            }
+
+            break;
+        }
+
         default:
             throw new Error("Ação desconhecida.");
     }
 
     broadcast(guildId);
+    broadcastProgress(guildId);
 }
 
 function broadcast(guildId) {
     const snapshot = getSnapshot(guildId);
+
+    lastSnapshots.set(
+        guildId,
+        JSON.stringify({
+            currentTrack: snapshot.currentTrack,
+            tracks: snapshot.tracks,
+            loop: snapshot.loop,
+            status: snapshot.status
+        })
+    );
 
     for (const socket of clients) {
         if (
@@ -324,6 +367,61 @@ function broadcast(guildId) {
             send(socket, "state", snapshot);
         }
     }
+}
+
+function broadcastProgress(guildId) {
+    const queue = getQueue(guildId);
+    const playerStatus = queue?.player?.state?.status;
+
+    const progress = {
+        positionMs: getPlaybackPosition(guildId),
+        status:
+            playerStatus === AudioPlayerStatus.Playing
+                ? "playing"
+                : (
+                    playerStatus === AudioPlayerStatus.Paused ||
+                    playerStatus === AudioPlayerStatus.AutoPaused
+                        ? "paused"
+                        : "idle"
+                )
+    };
+
+    for (const socket of clients) {
+        if (
+            socket.readyState === WebSocket.OPEN &&
+            socket.authenticated &&
+            socket.guildId === guildId
+        ) {
+            send(socket, "progress", progress);
+        }
+    }
+}
+
+function syncGuild(guildId) {
+    const snapshot = getSnapshot(guildId);
+
+    const signature = JSON.stringify({
+        currentTrack: snapshot.currentTrack,
+        tracks: snapshot.tracks,
+        loop: snapshot.loop,
+        status: snapshot.status
+    });
+
+    if (lastSnapshots.get(guildId) !== signature) {
+        lastSnapshots.set(guildId, signature);
+
+        for (const socket of clients) {
+            if (
+                socket.readyState === WebSocket.OPEN &&
+                socket.authenticated &&
+                socket.guildId === guildId
+            ) {
+                send(socket, "state", snapshot);
+            }
+        }
+    }
+
+    broadcastProgress(guildId);
 }
 
 function startActivityServer(client) {
@@ -469,6 +567,16 @@ function startActivityServer(client) {
 
         socket.on("close", () => {
             clients.delete(socket);
+
+            const hasOtherClients = [...clients].some(
+                client =>
+                    client.authenticated &&
+                    client.guildId === socket.guildId
+            );
+
+            if (!hasOtherClients && socket.guildId) {
+                lastSnapshots.delete(socket.guildId);
+            }
         });
 
         socket.on("error", error => {
@@ -487,9 +595,9 @@ function startActivityServer(client) {
         );
 
         for (const guildId of guilds) {
-            broadcast(guildId);
+            syncGuild(guildId);
         }
-    }, 1500);
+    }, 1000);
 
     server.listen(PORT, () => {
         console.log(
@@ -497,7 +605,10 @@ function startActivityServer(client) {
         );
     });
 
-    server.on("close", () => clearInterval(syncInterval));
+    server.on("close", () => {
+        clearInterval(syncInterval);
+        lastSnapshots.clear();
+    });
 
     return { server, wss };
 }

@@ -1,9 +1,17 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 
 const TEMP_DIR = path.resolve(__dirname, '../../temp');
 const runtimes = new Map();
+const queueEvents = new EventEmitter();
+
+function onQueueChange(listener) {
+    queueEvents.on('change', listener);
+
+    return () => queueEvents.off('change', listener);
+}
 
 function getQueueDir(guildId) {
     return path.join(TEMP_DIR, String(guildId));
@@ -45,6 +53,8 @@ function writeQueue(guildId, queue) {
         JSON.stringify(data, null, 2),
         'utf8'
     );
+
+    queueEvents.emit('change', String(guildId));
 
     return data;
 }
@@ -269,6 +279,8 @@ function deleteQueue(guildId) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
 
+    queueEvents.emit('change', String(guildId));
+
     console.log(`🗑️ Fila encerrada: ${guildId}`);
 
     return exists;
@@ -290,5 +302,6 @@ module.exports = {
     updateQueue,
     setConnection,
     setPlayer,
-    deleteQueue
+    deleteQueue,
+    onQueueChange
 };
