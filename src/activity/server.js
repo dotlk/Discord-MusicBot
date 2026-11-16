@@ -1,5 +1,8 @@
 
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
+
 const { WebSocketServer, WebSocket } = require("ws");
 const { AudioPlayerStatus, getVoiceConnection } = require("@discordjs/voice");
 
@@ -20,6 +23,8 @@ const {
 const DISCORD_API = "https://discord.com/api/v10";
 const REDIRECT_URI = "https://127.0.0.1";
 
+const DIST_DIR = path.resolve(__dirname, "../../activity/dist");
+
 const clients = new Set();
 const lastSnapshots = new Map();
 
@@ -30,6 +35,92 @@ const THUMBNAIL_HOSTS = new Set([
 ]);
 
 const MAX_THUMBNAIL_SIZE = 5 * 1024 * 1024;
+
+const CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf"
+};
+
+function serveActivity(req, res) {
+    if (!fs.existsSync(DIST_DIR)) {
+        res.writeHead(503, {
+            "Content-Type": "text/plain; charset=utf-8"
+        });
+
+        res.end("Activity ainda não foi compilada. Execute npm run build.");
+        return;
+    }
+
+    let pathname;
+
+    try {
+        pathname = decodeURIComponent(
+            new URL(req.url, "http://localhost").pathname
+        );
+    } catch {
+        res.writeHead(400);
+        res.end("URL inválida.");
+        return;
+    }
+
+    const requestedPath = pathname === "/" ? "/index.html" : pathname;
+
+    const filePath = path.resolve(
+        DIST_DIR,
+        `.${requestedPath}`
+    );
+
+    if (
+        filePath !== DIST_DIR &&
+        !filePath.startsWith(DIST_DIR + path.sep)
+    ) {
+        res.writeHead(403);
+        res.end("Acesso negado.");
+        return;
+    }
+
+    let finalPath = filePath;
+
+    if (
+        !fs.existsSync(finalPath) ||
+        !fs.statSync(finalPath).isFile()
+    ) {
+        finalPath = path.join(DIST_DIR, "index.html");
+    }
+
+    if (!fs.existsSync(finalPath)) {
+        res.writeHead(404);
+        res.end("Activity não encontrada.");
+        return;
+    }
+
+    const extension = path.extname(finalPath).toLowerCase();
+
+    res.writeHead(200, {
+        "Content-Type":
+            CONTENT_TYPES[extension] || "application/octet-stream",
+        "Cache-Control":
+            extension === ".html"
+                ? "no-cache"
+                : "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff"
+    });
+
+    fs.createReadStream(finalPath).pipe(res);
+}
 
 async function proxyThumbnail(req, res) {
     try {
@@ -434,6 +525,10 @@ function startActivityServer(client) {
 
     const PORT = Number(process.env.ACTIVITY_PORT || 3001);
 
+    if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+        throw new Error("ACTIVITY_PORT inválida.");
+    }
+
     const server = http.createServer(async (req, res) => {
         if (req.method === "GET" && req.url === "/health") {
             res.writeHead(200, {
@@ -498,6 +593,11 @@ function startActivityServer(client) {
                 }));
             }
 
+            return;
+        }
+
+        if (req.method === "GET" || req.method === "HEAD") {
+            serveActivity(req, res);
             return;
         }
 
@@ -617,9 +717,12 @@ function startActivityServer(client) {
         }
     }, 1000);
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
         console.log(
-            `[Activity] Servidor iniciado na porta ${PORT}.`
+            `[Activity] Servidor iniciado em 0.0.0.0:${PORT}.`
+        );
+        console.log(
+            `[Activity] Arquivos da Activity: ${DIST_DIR}`
         );
     });
 
