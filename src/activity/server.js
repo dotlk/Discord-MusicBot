@@ -13,7 +13,8 @@ const {
 const {
     skipTrack,
     seekTrack,
-    getPlaybackPosition
+    getPlaybackPosition,
+    visualizerEvents
 } = require("../audio/player");
 
 const DISCORD_API = "https://discord.com/api/v10";
@@ -505,6 +506,23 @@ function startActivityServer(client) {
     });
 
     const wss = new WebSocketServer({ server });
+
+    // Encaminha as frequências analisadas pelo player
+    // somente para os usuários conectados à mesma guild.
+    visualizerEvents.on("data", ({ guildId, bands, timestamp }) => {
+        for (const socket of clients) {
+            if (
+                socket.readyState === WebSocket.OPEN &&
+                socket.authenticated &&
+                socket.guildId === guildId
+            ) {
+                send(socket, "visualizer", {
+                    bands,
+                    timestamp
+                });
+            }
+        }
+    });
 
     wss.on("connection", socket => {
         clients.add(socket);

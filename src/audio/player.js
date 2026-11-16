@@ -8,6 +8,9 @@ const {
 } = require("@discordjs/voice");
 
 const { spawn } = require("node:child_process");
+const { Transform } = require("node:stream");
+const { EventEmitter } = require("node:events");
+
 const ffmpegPath = require("ffmpeg-static");
 
 const {
@@ -42,6 +45,119 @@ const playbackPositions = new Map();
 const seekRequests = new Map();
 const seekSequences = new Map();
 
+// ==============================
+// AUDIO VISUALIZER
+// ==============================
+
+const visualizerEvents = new EventEmitter();
+visualizerEvents.setMaxListeners(0);
+
+const VISUALIZER_SAMPLE_RATE = 48000;
+const VISUALIZER_WINDOW_SIZE = 1024;
+const VISUALIZER_INTERVAL = 50;
+
+const VISUALIZER_FREQUENCIES = [
+    60, 120, 250, 500,
+    1000, 2000, 4000, 8000
+];
+
+function analyzeFrequencies(samples) {
+    const bands = VISUALIZER_FREQUENCIES.map(frequency => {
+        const omega =
+            2 * Math.PI * frequency / VISUALIZER_SAMPLE_RATE;
+
+        const coefficient = 2 * Math.cos(omega);
+
+        let previous = 0;
+        let previous2 = 0;
+
+        for (let i = 0; i < samples.length; i++) {
+            const current =
+                samples[i] +
+                coefficient * previous -
+                previous2;
+
+            previous2 = previous;
+            previous = current;
+        }
+
+        const power =
+            previous2 * previous2 +
+            previous * previous -
+            coefficient * previous * previous2;
+
+        const magnitude =
+            Math.sqrt(Math.max(0, power)) / samples.length;
+
+        return Math.min(1, magnitude / 9000);
+    });
+
+    return bands;
+}
+
+function createVisualizerStream(guildId) {
+    let pending = Buffer.alloc(0);
+    let samples = [];
+    let lastEmission = 0;
+
+    return new Transform({
+        transform(chunk, encoding, callback) {
+            try {
+                pending = Buffer.concat([pending, chunk]);
+
+                // PCM s16le estéreo: 4 bytes por frame.
+                const usableLength =
+                    pending.length - (pending.length % 4);
+
+                for (
+                    let offset = 0;
+                    offset < usableLength;
+                    offset += 4
+                ) {
+                    const left = pending.readInt16LE(offset);
+                    const right = pending.readInt16LE(offset + 2);
+
+                    samples.push((left + right) / 2);
+
+                    if (samples.length >= VISUALIZER_WINDOW_SIZE) {
+                        const now = Date.now();
+
+                        if (
+                            now - lastEmission >=
+                            VISUALIZER_INTERVAL
+                        ) {
+                            const bands =
+                                analyzeFrequencies(samples);
+
+                            visualizerEvents.emit("data", {
+                                guildId,
+                                bands,
+                                timestamp: now
+                            });
+
+                            lastEmission = now;
+                        }
+
+                        samples = [];
+                    }
+                }
+
+                pending = pending.subarray(usableLength);
+
+                // Encaminha o áudio original sem alterações.
+                callback(null, chunk);
+            } catch (error) {
+                // A análise não deve interromper a reprodução.
+                callback(null, chunk);
+            }
+        }
+    });
+}
+
+// ==============================
+// CONTROLE DE GERAÇÕES
+// ==============================
+
 function getGeneration(guildId) {
     return generations.get(guildId) || 0;
 }
@@ -51,6 +167,10 @@ function invalidateGeneration(guildId) {
     generations.set(guildId, next);
     return next;
 }
+
+// ==============================
+// POSIÇÃO DA MÚSICA
+// ==============================
 
 function getPlaybackPosition(guildId) {
     const state = playbackPositions.get(guildId);
@@ -62,6 +182,10 @@ function getPlaybackPosition(guildId) {
         (state.resource?.playbackDuration || 0)
     );
 }
+
+// ==============================
+// GERENCIAMENTO DE PROCESSOS
+// ==============================
 
 function terminateProcess(child) {
     if (!child) return;
@@ -81,7 +205,7 @@ function terminateProcess(child) {
     }
 }
 
-// Encerra um fluxo específico sem alterar o Map
+// Encerra um fluxo específico sem alterar o Map.
 function destroyStream(stream) {
     if (!stream) return;
 
@@ -97,7 +221,7 @@ function destroyStream(stream) {
     terminateProcess(stream.ffmpeg);
 }
 
-// Encerra o fluxo atualmente registrado
+// Encerra o fluxo atualmente registrado.
 function cleanupStream(guildId) {
     const stream = activeStreams.get(guildId);
     if (!stream) return;
@@ -105,6 +229,10 @@ function cleanupStream(guildId) {
     activeStreams.delete(guildId);
     destroyStream(stream);
 }
+
+// ==============================
+// PLAYER
+// ==============================
 
 function getOrCreatePlayer(guildId) {
     const queue = createQueue(guildId);
@@ -233,6 +361,10 @@ function attachPlayer(guildId, connection) {
     return player;
 }
 
+// ==============================
+// REPRODUÇÃO
+// ==============================
+
 async function playTrack(
     guildId,
     track,
@@ -275,6 +407,7 @@ async function playTrack(
     // ==============================
     // SPOTIFY → YOUTUBE
     // ==============================
+
     if (track.spotifySearchQuery) {
         const resolved = await getVideoInfo(
             track.spotifySearchQuery
@@ -301,7 +434,7 @@ async function playTrack(
         return null;
     }
 
-    // Guarda o fluxo anterior durante o seek
+    // Guarda o fluxo anterior durante o seek.
     const previousStream = preserveExistingStream
         ? activeStreams.get(guildId)
         : null;
@@ -313,6 +446,7 @@ async function playTrack(
     // ==============================
     // YT-DLP
     // ==============================
+
     const ytDlpArgs = [
         "--js-runtimes",
         `node:${process.execPath}`,
@@ -351,6 +485,7 @@ async function playTrack(
     // ==============================
     // FFMPEG
     // ==============================
+
     const ffmpeg = spawn(ffmpegPath, [
         "-hide_banner",
         "-loglevel",
@@ -492,8 +627,14 @@ async function playTrack(
     // ==============================
     // RECURSO DE ÁUDIO
     // ==============================
+
+    const visualizerStream =
+        createVisualizerStream(guildId);
+
+    ffmpeg.stdout.pipe(visualizerStream);
+
     const resource = createAudioResource(
-        ffmpeg.stdout,
+        visualizerStream,
         {
             inputType: StreamType.Raw,
             metadata: track,
@@ -513,7 +654,7 @@ async function playTrack(
         status: "playing"
     });
 
-    // Substitui diretamente o recurso anterior
+    // Substitui diretamente o recurso anterior.
     queue.player.play(resource);
 
     // O novo recurso assumiu a reprodução.
@@ -528,6 +669,7 @@ async function playTrack(
     // ==============================
     // ATUALIZA ATIVIDADE DO DISCORD
     // ==============================
+
     updateMusicStatus(guildId, track);
 
     console.log(
@@ -537,6 +679,10 @@ async function playTrack(
     return track;
 }
 
+// ==============================
+// PRÓXIMA MÚSICA
+// ==============================
+
 async function playNext(guildId) {
     const queue = getQueue(guildId);
 
@@ -545,7 +691,7 @@ async function playNext(guildId) {
         return null;
     }
 
-    // Invalida qualquer seek pendente
+    // Invalida qualquer seek pendente.
     seekRequests.delete(guildId);
 
     const generation =
@@ -597,6 +743,10 @@ async function playNext(guildId) {
     return null;
 }
 
+// ==============================
+// PULAR MÚSICA
+// ==============================
+
 function skipTrack(guildId) {
     const queue = getQueue(guildId);
 
@@ -611,7 +761,7 @@ function skipTrack(guildId) {
     const skippedTitle =
         queue.currentTrack.title;
 
-    // Invalida qualquer seek pendente
+    // Invalida qualquer seek pendente.
     seekRequests.delete(guildId);
 
     invalidateGeneration(guildId);
@@ -648,6 +798,10 @@ function skipTrack(guildId) {
     return true;
 }
 
+// ==============================
+// SEEK
+// ==============================
+
 async function seekTrack(guildId, positionSeconds) {
     const queue = getQueue(guildId);
 
@@ -681,12 +835,12 @@ async function seekTrack(guildId, positionSeconds) {
         return false;
     }
 
-    // Preserva o estado original de pausa
+    // Preserva o estado original de pausa.
     const wasPaused = previousSeek
         ? previousSeek.wasPaused
         : player.state.status === AudioPlayerStatus.Paused;
 
-    // Identificador exclusivo desta solicitação
+    // Identificador exclusivo desta solicitação.
     const seekId =
         (seekSequences.get(guildId) || 0) + 1;
 
@@ -697,7 +851,7 @@ async function seekTrack(guildId, positionSeconds) {
         wasPaused
     });
 
-    // Invalida as operações anteriores
+    // Invalida as operações anteriores.
     const generation =
         invalidateGeneration(guildId);
 
@@ -715,7 +869,7 @@ async function seekTrack(guildId, positionSeconds) {
         const latestSeek =
             seekRequests.get(guildId);
 
-        // Só o seek mais recente pode finalizar
+        // Só o seek mais recente pode finalizar.
         if (
             !latestSeek ||
             latestSeek.id !== seekId ||
@@ -739,7 +893,7 @@ async function seekTrack(guildId, positionSeconds) {
         const latestSeek =
             seekRequests.get(guildId);
 
-        // Um seek antigo não pode interferir no atual
+        // Um seek antigo não pode interferir no atual.
         if (
             !latestSeek ||
             latestSeek.id !== seekId ||
@@ -765,6 +919,10 @@ async function seekTrack(guildId, positionSeconds) {
         return false;
     }
 }
+
+// ==============================
+// REPRODUZIR MÚSICA PRIORIZADA
+// ==============================
 
 function playPrioritizedNow(
     guildId,
@@ -810,10 +968,14 @@ function playPrioritizedNow(
     return result;
 }
 
+// ==============================
+// PARAR PLAYER
+// ==============================
+
 function stopPlayer(guildId) {
     bypassLoop.delete(guildId);
 
-    // Invalida qualquer seek pendente
+    // Invalida qualquer seek pendente.
     seekRequests.delete(guildId);
 
     invalidateGeneration(guildId);
@@ -841,9 +1003,7 @@ function stopPlayer(guildId) {
 
     player.stop(true);
 
-    // ==============================
-    // REMOVE ATIVIDADE DO SERVIDOR
-    // ==============================
+    // Remove atividade do servidor.
     clearMusicStatus(guildId);
 
     console.log(
@@ -852,6 +1012,10 @@ function stopPlayer(guildId) {
 
     return true;
 }
+
+// ==============================
+// EXPORTAÇÕES
+// ==============================
 
 module.exports = {
     getOrCreatePlayer,
@@ -862,5 +1026,6 @@ module.exports = {
     playPrioritizedNow,
     stopPlayer,
     seekTrack,
-    getPlaybackPosition
+    getPlaybackPosition,
+    visualizerEvents
 };

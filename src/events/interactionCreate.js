@@ -100,6 +100,30 @@ function formatDuration(seconds) {
     return `${minutes}:${String(remaining).padStart(2, "0")}`;
 }
 
+// ==============================
+// CONVITE DA ACTIVITY
+// ==============================
+
+function createActivityInviteRow(applicationId) {
+    const button = new ButtonBuilder()
+        .setLabel("🎵 Abrir Activity")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/activities/${applicationId}`);
+
+    return new ActionRowBuilder().addComponents(button);
+}
+
+async function sendActivityInvite(interaction) {
+    await interaction.channel.send({
+        content:
+            "🎵 **A central de música está pronta!**\n" +
+            "Abra a Activity para acompanhar a fila e controlar a reprodução.",
+        components: [
+            createActivityInviteRow(interaction.applicationId)
+        ]
+    });
+}
+
 function isUnsupportedUrl(query) {
     try {
         const url = new URL(query);
@@ -210,6 +234,8 @@ module.exports = function registerInteractionEvent(client) {
                         content:
                             `Entrei no canal **${channel.name}** a pedido de <@${interaction.user.id}>!`
                     });
+
+                    await sendActivityInvite(interaction);
 
                     break;
                 }
@@ -375,6 +401,9 @@ module.exports = function registerInteractionEvent(client) {
                             break;
                         }
 
+                        // Identifica se esta solicitação fará o bot entrar na call.
+                        const shouldSendActivityInvite = !currentConnection;
+
                         const connection =
                             await joinChannel(channel);
 
@@ -464,6 +493,11 @@ module.exports = function registerInteractionEvent(client) {
                                           `${track.title}\n` +
                                           `Posição: ${position} · Duração: ${formatDuration(track.duration)}`
                             });
+                        }
+
+                        // Envia o convite somente quando este /play conecta o bot.
+                        if (shouldSendActivityInvite) {
+                            await sendActivityInvite(interaction);
                         }
 
                     } finally {
@@ -713,10 +747,7 @@ module.exports = function registerInteractionEvent(client) {
                 }
 
                 // ==============================
-                // /LOOP
-                // ==============================
-                // ==============================
-                // /SHUFFLE - Embaralhar a fila
+                // /SHUFFLE
                 // ==============================
                 case "shuffle": {
                     const guildId = interaction.guildId;
@@ -765,6 +796,9 @@ module.exports = function registerInteractionEvent(client) {
                     break;
                 }
 
+                // ==============================
+                // /LOOP
+                // ==============================
                 case "loop": {
                     const guildId = interaction.guildId;
                     const connection = getVoiceConnection(guildId);
@@ -902,7 +936,7 @@ module.exports = function registerInteractionEvent(client) {
                 }
 
                 // ==============================
-                // /PAUSE - Pausar ou retomar
+                // /PAUSE
                 // ==============================
                 case "pause": {
                     const guildId = interaction.guildId;

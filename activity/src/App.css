@@ -56,6 +56,8 @@ button {
   align-items: center;
   justify-content: center;
   text-align: center;
+  position: relative;
+  isolation: isolate;
 }
 
 .track-art {
@@ -232,9 +234,13 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #292930;
+  border: 1px solid rgba(41, 41, 48, 0.55);
   border-radius: 16px;
-  background: #19191f;
+  background: rgba(25, 25, 31, 0.55);
+
+  /* Fila acima do visualizador */
+  position: relative;
+  z-index: 1;
 }
 
 .queue-header {
@@ -726,5 +732,115 @@ footer span {
 
   .queue-hint {
     display: none;
+  }
+}
+
+/* Audio Visualizer */
+.visualizer {
+  --visualizer-radius: 155px;
+
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(130%, 620px);
+  aspect-ratio: 1;
+  transform:
+    translate(-50%, -50%)
+    scale(var(--beat-scale, 1));
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.95;
+  filter:
+    drop-shadow(0 0 var(--beat-glow, 16px)
+    hsla(265, 95%, 70%, 0.65));
+  transition: opacity 0.3s ease;
+}
+
+/* Brilho difuso atrás das barras */
+.visualizer::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    hsla(265, 90%, 60%, 0.17) 0%,
+    hsla(275, 90%, 55%, 0.10) 35%,
+    transparent 72%
+  );
+  filter: blur(35px);
+  transform: scale(calc(1 + var(--beat-pulse, 0) * 0.35));
+}
+
+/* Barras radiais */
+.visualizer-bar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: var(--bar-height, 20px);
+  border-radius: 999px;
+
+  background: linear-gradient(
+    to top,
+    hsl(var(--bar-hue, 265deg) 90% 48%),
+    hsl(var(--bar-hue, 265deg) 95% 72%) 55%,
+    #e9d5ff
+  );
+
+  opacity: var(--bar-opacity, 0.8);
+
+  box-shadow:
+    0 0 var(--bar-glow, 7px)
+    hsla(270, 100%, 75%, 0.9),
+    0 0 calc(var(--bar-glow, 7px) * 2)
+    hsla(280, 100%, 65%, 0.45);
+}
+
+/* Barras que crescem para fora */
+.visualizer-bar.outward {
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--angle))
+    translateY(calc(-1 * var(--visualizer-radius)));
+  transform-origin: center center;
+}
+
+/* Barras que crescem para dentro */
+.visualizer-bar.inward {
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--angle))
+    translateY(var(--visualizer-radius))
+    rotate(180deg);
+  transform-origin: center center;
+}
+
+/* Mantém o conteúdo do player na frente */
+.now-playing > :not(.visualizer) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Adaptação para telas menores */
+@media (max-width: 700px) {
+  .visualizer {
+    --visualizer-radius: 115px;
+    width: min(145%, 440px);
+  }
+
+  .visualizer-bar {
+    width: 2.5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .visualizer {
+    --visualizer-radius: 85px;
+    width: min(160%, 340px);
+  }
+
+  .visualizer-bar {
+    width: 2px;
   }
 }

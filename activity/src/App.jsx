@@ -51,8 +51,226 @@ function TrackImage({ src, className = "" }) {
     );
 }
 
+/* Visualizador de áudio com detecção de batidas */
+function AudioVisualizer({ bandsRef }) {
+    const barsRef = useRef([]);
+    const visualizerRef = useRef(null);
+
+    useEffect(() => {
+        const barCount = barsRef.current.length;
+
+        const smoothedBands = Array(8).fill(0);
+        const energyHistory = [];
+
+        let animationFrame;
+        let previousTime = 0;
+        let lastBeatTime = 0;
+        let beatPulse = 0;
+        let estimatedBpm = 0;
+
+        const beatIntervals = [];
+
+        function animate(timestamp) {
+            if (timestamp - previousTime < 16) {
+                animationFrame = requestAnimationFrame(animate);
+                return;
+            }
+
+            const deltaTime = previousTime
+                ? Math.min(timestamp - previousTime, 50)
+                : 16;
+
+            previousTime = timestamp;
+
+            const targetBands = bandsRef.current;
+            let totalEnergy = 0;
+
+            for (let i = 0; i < 8; i++) {
+                const target = Math.max(
+                    0,
+                    Math.min(1, Number(targetBands[i]) || 0)
+                );
+
+                const smoothing = target > smoothedBands[i]
+                    ? 0.48
+                    : 0.16;
+
+                smoothedBands[i] +=
+                    (target - smoothedBands[i]) * smoothing;
+
+                totalEnergy += smoothedBands[i];
+            }
+
+            const energy = totalEnergy / 8;
+
+            energyHistory.push(energy);
+
+            if (energyHistory.length > 35) {
+                energyHistory.shift();
+            }
+
+            const averageEnergy =
+                energyHistory.reduce((sum, value) => sum + value, 0) /
+                energyHistory.length;
+
+            const isBeat =
+                energyHistory.length >= 12 &&
+                energy > averageEnergy * 1.18 + 0.018 &&
+                energy > 0.055 &&
+                timestamp - lastBeatTime > 250;
+
+            if (isBeat) {
+                if (lastBeatTime > 0) {
+                    const interval = timestamp - lastBeatTime;
+
+                    if (interval >= 280 && interval <= 1300) {
+                        beatIntervals.push(interval);
+
+                        if (beatIntervals.length > 6) {
+                            beatIntervals.shift();
+                        }
+
+                        const averageInterval =
+                            beatIntervals.reduce(
+                                (sum, value) => sum + value,
+                                0
+                            ) / beatIntervals.length;
+
+                        estimatedBpm = Math.round(
+                            60000 / averageInterval
+                        );
+                    }
+                }
+
+                lastBeatTime = timestamp;
+                beatPulse = 1;
+            }
+
+            beatPulse *= Math.exp(-deltaTime / 150);
+
+            const time = timestamp / 1000;
+            const baseHue = 265 + Math.sin(time * 0.65) * 5;
+
+            const visualizer = visualizerRef.current;
+
+            if (visualizer) {
+                visualizer.style.setProperty(
+                    "--beat-pulse",
+                    beatPulse.toFixed(3)
+                );
+
+                visualizer.style.setProperty(
+                    "--beat-glow",
+                    `${16 + beatPulse * 42}px`
+                );
+
+                visualizer.style.setProperty(
+                    "--beat-scale",
+                    `${1 + beatPulse * 0.09}`
+                );
+
+                visualizer.style.setProperty(
+                    "--beat-hue",
+                    `${baseHue}deg`
+                );
+
+                visualizer.style.setProperty(
+                    "--beat-bpm",
+                    estimatedBpm
+                );
+            }
+
+            for (let i = 0; i < barCount; i++) {
+                const position = (i / barCount) * 8;
+
+                const lowerIndex = Math.floor(position) % 8;
+                const upperIndex = (lowerIndex + 1) % 8;
+
+                const blend = position - Math.floor(position);
+
+                const intensity =
+                    smoothedBands[lowerIndex] * (1 - blend) +
+                    smoothedBands[upperIndex] * blend;
+
+                const localWave =
+                    Math.sin(time * 2.2 + i * 0.35) * 4;
+
+                const beatContribution =
+                    beatPulse * (18 + intensity * 28);
+
+                const height = Math.max(
+                    5,
+                    8 + intensity * 105 + beatContribution + localWave
+                );
+
+                const hue =
+                    baseHue + Math.sin(i * 0.15) * 13;
+
+                const bar = barsRef.current[i];
+
+                if (!bar) continue;
+
+                bar.style.setProperty(
+                    "--bar-height",
+                    `${height}px`
+                );
+
+                bar.style.setProperty(
+                    "--bar-hue",
+                    `${hue}deg`
+                );
+
+                bar.style.setProperty(
+                    "--bar-opacity",
+                    `${0.7 + intensity * 0.3}`
+                );
+
+                bar.style.setProperty(
+                    "--bar-glow",
+                    `${7 + beatPulse * 18}px`
+                );
+            }
+
+            animationFrame = requestAnimationFrame(animate);
+        }
+
+        animationFrame = requestAnimationFrame(animate);
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+        };
+    }, [bandsRef]);
+
+    return (
+        <div
+            ref={visualizerRef}
+            className="visualizer"
+            aria-hidden="true"
+        >
+            {Array.from({ length: 48 }, (_, index) => (
+                <span
+                    key={index}
+                    ref={element => {
+                        barsRef.current[index] = element;
+                    }}
+                    className={`visualizer-bar ${
+                        index % 2 === 0 ? "outward" : "inward"
+                    }`}
+                    style={{
+                        "--angle": `${(index / 48) * 360}deg`
+                    }}
+                />
+            ))}
+        </div>
+    );
+}
+
 export default function App() {
     const socketRef = useRef(null);
+
+    const queueListRef = useRef(null);
+    const dragPointerYRef = useRef(null);
+    const dragScrollFrameRef = useRef(null);
 
     const [current, setCurrent] = useState(null);
     const [queue, setQueue] = useState([]);
@@ -64,6 +282,8 @@ export default function App() {
 
     const [progressMs, setProgressMs] = useState(0);
     const [seekPreviewMs, setSeekPreviewMs] = useState(null);
+
+    const visualizerBandsRef = useRef(Array(8).fill(0));
 
     const progressBaseRef = useRef(0);
     const progressReceivedAtRef = useRef(Date.now());
@@ -77,7 +297,6 @@ export default function App() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
 
-    // Atualiza o progresso localmente entre as mensagens do servidor.
     useEffect(() => {
         if (playbackStatus !== "playing") return;
 
@@ -200,6 +419,7 @@ export default function App() {
                             progressBaseRef.current = 0;
                             setProgressMs(0);
                             setSeekPreviewMs(null);
+                            visualizerBandsRef.current = Array(8).fill(0);
                         }
 
                         if (processingNextRef.current) {
@@ -244,6 +464,15 @@ export default function App() {
                         if (message.status) {
                             setPlaybackStatus(message.status);
                             setPlaying(message.status === "playing");
+                        }
+                    }
+
+                    if (message.type === "visualizer") {
+                        if (
+                            Array.isArray(message.bands) &&
+                            message.bands.length === 8
+                        ) {
+                            visualizerBandsRef.current = message.bands;
                         }
                     }
 
@@ -405,6 +634,67 @@ export default function App() {
         sendAction("next");
     }
 
+    /* Auto-scroll da fila durante o arraste */
+    function autoScrollQueue() {
+        const container = queueListRef.current;
+        const pointerY = dragPointerYRef.current;
+
+        if (!container || pointerY === null) {
+            dragScrollFrameRef.current = null;
+            return;
+        }
+
+        const rect = container.getBoundingClientRect();
+
+        const edgeSize = 75;
+        const maxSpeed = 14;
+
+        let scrollSpeed = 0;
+
+        if (pointerY < rect.top + edgeSize) {
+            const intensity = Math.min(
+                1,
+                (rect.top + edgeSize - pointerY) / edgeSize
+            );
+
+            scrollSpeed = -Math.ceil(intensity * maxSpeed);
+        } else if (pointerY > rect.bottom - edgeSize) {
+            const intensity = Math.min(
+                1,
+                (pointerY - (rect.bottom - edgeSize)) / edgeSize
+            );
+
+            scrollSpeed = Math.ceil(intensity * maxSpeed);
+        }
+
+        if (scrollSpeed !== 0) {
+            container.scrollTop += scrollSpeed;
+        }
+
+        dragScrollFrameRef.current =
+            requestAnimationFrame(autoScrollQueue);
+    }
+
+    function handleQueueDragOver(event) {
+        event.preventDefault();
+
+        dragPointerYRef.current = event.clientY;
+
+        if (dragScrollFrameRef.current === null) {
+            dragScrollFrameRef.current =
+                requestAnimationFrame(autoScrollQueue);
+        }
+    }
+
+    function stopQueueAutoScroll() {
+        if (dragScrollFrameRef.current !== null) {
+            cancelAnimationFrame(dragScrollFrameRef.current);
+            dragScrollFrameRef.current = null;
+        }
+
+        dragPointerYRef.current = null;
+    }
+
     function moveTrack(targetIndex) {
         if (dragged === null || dragged === targetIndex) return;
 
@@ -414,6 +704,7 @@ export default function App() {
         });
 
         setDragged(null);
+        stopQueueAutoScroll();
     }
 
     const durationMs = Number(current?.duration) * 1000;
@@ -429,6 +720,8 @@ export default function App() {
     return (
         <main className="app">
             <section className="now-playing">
+                <AudioVisualizer bandsRef={visualizerBandsRef} />
+
                 <div className="section-label">TOCANDO AGORA</div>
 
                 <TrackImage
@@ -503,7 +796,11 @@ export default function App() {
                     <button
                         className="play-button"
                         onClick={() => sendAction("togglePlayback")}
-                        disabled={!connected || !current}
+                        disabled={
+                            !connected ||
+                            !current ||
+                            !["playing", "paused"].includes(playbackStatus)
+                        }
                         title={playing ? "Pausar" : "Retomar"}
                     >
                         {playing ? (
@@ -571,7 +868,11 @@ export default function App() {
                     </button>
                 </div>
 
-                <div className="queue-list">
+                <div
+                    className="queue-list"
+                    ref={queueListRef}
+                    onDragOver={handleQueueDragOver}
+                >
                     {queue.length === 0 ? (
                         <div className="empty-queue">
                             Não há músicas na fila.
@@ -584,10 +885,16 @@ export default function App() {
                                     dragged === index ? "dragging" : ""
                                 }`}
                                 draggable={connected}
-                                onDragStart={() => setDragged(index)}
+                                onDragStart={() => {
+                                    setDragged(index);
+                                    dragPointerYRef.current = null;
+                                }}
                                 onDragOver={event => event.preventDefault()}
                                 onDrop={() => moveTrack(index)}
-                                onDragEnd={() => setDragged(null)}
+                                onDragEnd={() => {
+                                    setDragged(null);
+                                    stopQueueAutoScroll();
+                                }}
                             >
                                 <span className="queue-number">
                                     {index + 1}
@@ -620,7 +927,7 @@ export default function App() {
 
             <footer>
                 BicodeMel <span>•</span> Music for your server
-                <span> · </span>
+                <span> • </span>
                 {connected ? "Conectado" : "Desconectado"}
             </footer>
 
