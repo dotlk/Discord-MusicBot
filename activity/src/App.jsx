@@ -1,182 +1,370 @@
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DiscordSDK } from "@discord/embedded-app-sdk";
 import "./App.css";
 
-const initialQueue = [
-  { id: 1, title: "After Dark", artist: "Mr.Kitty", duration: "4:17" },
-  { id: 2, title: "The Perfect Girl", artist: "Mareux", duration: "3:14" },
-  { id: 3, title: "Resonance", artist: "HOME", duration: "3:32" },
-  { id: 4, title: "Memory Reboot", artist: "VØJ, Narvent", duration: "3:29" },
-];
+const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
+
+function formatDuration(duration) {
+    if (duration == null) return "--:--";
+
+    const seconds = Number(duration);
+
+    if (!Number.isFinite(seconds)) return duration;
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function TrackImage({ src, className = "" }) {
+    const [failed, setFailed] = useState(false);
+
+    useEffect(() => {
+        setFailed(false);
+    }, [src]);
+
+    if (!src || failed) {
+        return (
+            <div className={className}>
+                <span>♫</span>
+            </div>
+        );
+    }
+
+    return (
+        <img
+            className={className}
+            src={src}
+            alt="Capa da música"
+            onError={() => setFailed(true)}
+        />
+    );
+}
 
 export default function App() {
-  const [current, setCurrent] = useState({
-    title: "Little Dark Age",
-    artist: "MGMT",
-    duration: "4:59",
-  });
+    const socketRef = useRef(null);
 
-  const [queue, setQueue] = useState(initialQueue);
-  const [playing, setPlaying] = useState(true);
-  const [loop, setLoop] = useState(false);
-  const [dragged, setDragged] = useState(null);
+    const [current, setCurrent] = useState(null);
+    const [queue, setQueue] = useState([]);
+    const [playing, setPlaying] = useState(false);
+    const [loop, setLoop] = useState(false);
+    const [dragged, setDragged] = useState(null);
 
-  function nextTrack() {
-    if (queue.length === 0) return;
+    const [connected, setConnected] = useState(false);
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(true);
 
-    setCurrent(queue[0]);
-    setQueue((previous) => previous.slice(1));
-    setPlaying(true);
-  }
+    useEffect(() => {
+        let cancelled = false;
+        let socket = null;
 
-  function shuffleQueue() {
-    setQueue((previous) => {
-      const shuffled = [...previous];
+        async function connectActivity() {
+            try {
+                if (!clientId) {
+                    throw new Error(
+                        "VITE_DISCORD_CLIENT_ID não está configurado."
+                    );
+                }
 
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
+                const discordSdk = new DiscordSDK(clientId);
 
-      return shuffled;
-    });
-  }
+                await discordSdk.ready();
 
-  function moveTrack(targetId) {
-    if (!dragged || dragged === targetId) return;
+                const { code } = await discordSdk.commands.authorize({
+                    client_id: clientId,
+                    response_type: "code",
+                    state: "",
+                    prompt: "none",
+                    scope: ["identify"]
+                });
 
-    setQueue((previous) => {
-      const items = [...previous];
-      const from = items.findIndex((track) => track.id === dragged);
-      const to = items.findIndex((track) => track.id === targetId);
+                const tokenResponse = await fetch("/api/token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ code })
+                });
 
-      if (from === -1 || to === -1) return previous;
+                const tokenData = await tokenResponse.json();
 
-      const [moved] = items.splice(from, 1);
-      items.splice(to, 0, moved);
+                if (!tokenResponse.ok) {
+                    throw new Error(
+                        tokenData.error || "Falha na autenticação OAuth."
+                    );
+                }
 
-      return items;
-    });
+                const auth = await discordSdk.commands.authenticate({
+                    access_token: tokenData.access_token
+                });
 
-    setDragged(null);
-  }
+                if (!auth) {
+                    throw new Error("Falha na autenticação com o Discord.");
+                }
 
-  return (
-    <main className="app">
-      <section className="now-playing">
-        <div className="section-label">TOCANDO AGORA</div>
+                if (!discordSdk.guildId) {
+                    throw new Error(
+                        "A Activity precisa estar aberta em um servidor."
+                    );
+                }
 
-        <div className="track-art">
-          <span>♫</span>
-        </div>
+                if (cancelled) return;
 
-        <div className="track-info">
-          <h2>{current.title}</h2>
-          <p>{current.artist}</p>
-        </div>
+                const protocol =
+                    window.location.protocol === "https:" ? "wss:" : "ws:";
 
-        <div className="progress">
-          <div className="progress-bar">
-            <div className="progress-fill" />
-          </div>
-          <div className="progress-time">
-            <span>0:00</span>
-            <span>{current.duration}</span>
-          </div>
-        </div>
+                socket = new WebSocket(
+                    `${protocol}//${window.location.host}/ws`
+                );
 
-        <div className="controls">
-          <button
-            className={`control-button ${loop ? "active" : ""}`}
-            onClick={() => setLoop(!loop)}
-            title="Repetir música atual"
-          >
-            ↻
-          </button>
+                socketRef.current = socket;
 
-          <button
-            className="play-button"
-            onClick={() => setPlaying(!playing)}
-            title={playing ? "Pausar" : "Retomar"}
-          >
-            {playing ? (
-              <span className="pause-icon">
-                <i />
-                <i />
-              </span>
-            ) : (
-              "▶"
-            )}
-          </button>
+                socket.addEventListener("open", () => {
+                    socket.send(JSON.stringify({
+                        type: "auth",
+                        accessToken: tokenData.access_token,
+                        guildId: discordSdk.guildId
+                    }));
+                });
 
-          <button
-            className="control-button"
-            onClick={nextTrack}
-            title="Próxima música"
-          >
-            ⏭
-          </button>
-        </div>
+                socket.addEventListener("message", (event) => {
+                    const message = JSON.parse(event.data);
 
-        <div className="playback-status">
-          {playing ? "Reproduzindo" : "Pausado"}
-          {loop && " · Repetição ativada"}
-        </div>
-      </section>
+                    if (message.type === "authenticated") {
+                        setConnected(true);
+                        setLoading(false);
+                        setError("");
+                    }
 
-      <section className="queue-section">
-        <div className="queue-header">
-          <div>
-            <div className="section-label">PRÓXIMAS MÚSICAS</div>
-            <h2>Fila de reprodução</h2>
-            <p>{queue.length} músicas na fila</p>
-          </div>
+                    if (message.type === "state") {
+                        setCurrent(message.currentTrack);
+                        setQueue(message.tracks || []);
+                        setLoop(message.loop === true);
+                        setPlaying(message.status === "playing");
+                    }
 
-          <button className="shuffle-button" onClick={shuffleQueue}>
-            ⤨ Shuffle
-          </button>
-        </div>
+                    if (message.type === "error") {
+                        setError(message.message || "Erro no servidor.");
+                    }
+                });
 
-        <div className="queue-list">
-          {queue.length === 0 ? (
-            <div className="empty-queue">
-              Não há músicas na fila.
-            </div>
-          ) : (
-            queue.map((track, index) => (
-              <div
-                key={track.id}
-                className={`queue-item ${dragged === track.id ? "dragging" : ""}`}
-                draggable
-                onDragStart={() => setDragged(track.id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => moveTrack(track.id)}
-                onDragEnd={() => setDragged(null)}
-              >
-                <span className="queue-number">{index + 1}</span>
+                socket.addEventListener("close", () => {
+                    if (!cancelled) {
+                        setConnected(false);
+                        setLoading(false);
+                        setError("Conexão com o bot encerrada.");
+                    }
+                });
 
-                <div className="mini-art">♫</div>
+                socket.addEventListener("error", () => {
+                    if (!cancelled) {
+                        setError("Não foi possível conectar ao servidor do bot.");
+                        setLoading(false);
+                    }
+                });
 
-                <div className="queue-track-info">
-                  <strong>{track.title}</strong>
-                  <span>{track.artist}</span>
+            } catch (err) {
+                console.error("[Activity]", err);
+
+                if (!cancelled) {
+                    setError(err.message || "Erro ao iniciar a Activity.");
+                    setLoading(false);
+                }
+            }
+        }
+
+        connectActivity();
+
+        return () => {
+            cancelled = true;
+
+            if (socket) {
+                socket.close();
+            }
+
+            socketRef.current = null;
+        };
+    }, []);
+
+    function sendAction(action, extra = {}) {
+        const socket = socketRef.current;
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            setError("Sem conexão com o bot.");
+            return;
+        }
+
+        socket.send(JSON.stringify({
+            type: "action",
+            action,
+            ...extra
+        }));
+    }
+
+    function moveTrack(targetIndex) {
+        if (dragged === null || dragged === targetIndex) return;
+
+        sendAction("reorder", {
+            fromIndex: dragged,
+            toIndex: targetIndex
+        });
+
+        setDragged(null);
+    }
+
+    return (
+        <main className="app">
+            <section className="now-playing">
+                <div className="section-label">TOCANDO AGORA</div>
+
+                <TrackImage
+                    src={current?.thumbnail}
+                    className="track-art"
+                />
+
+                <div className="track-info">
+                    <h2>{current?.title || "Nenhuma música"}</h2>
+                    <p>{current?.artist || "Aguardando reprodução"}</p>
                 </div>
 
-                <span className="duration">{track.duration}</span>
-                <span className="drag-handle">⠿</span>
-              </div>
-            ))
-          )}
-        </div>
+                <div className="progress">
+                    <div className="progress-bar">
+                        <div className="progress-fill" />
+                    </div>
 
-        <p className="queue-hint">
-          Arraste as músicas para reorganizar a fila.
-        </p>
-      </section>
+                    <div className="progress-time">
+                        <span>--:--</span>
+                        <span>{formatDuration(current?.duration)}</span>
+                    </div>
+                </div>
 
-      <footer>
-        BicodeMel <span>•</span> Music for your server
-      </footer>
-    </main>
-  );
+                <div className="controls">
+                    <button
+                        className={`control-button ${loop ? "active" : ""}`}
+                        onClick={() => sendAction("toggleLoop")}
+                        disabled={!connected || !current}
+                        title="Repetir música atual"
+                    >
+                        ↻
+                    </button>
+
+                    <button
+                        className="play-button"
+                        onClick={() => sendAction("togglePlayback")}
+                        disabled={!connected || !current}
+                        title={playing ? "Pausar" : "Retomar"}
+                    >
+                        {playing ? (
+                            <span className="pause-icon">
+                                <i />
+                                <i />
+                            </span>
+                        ) : (
+                            "▶"
+                        )}
+                    </button>
+
+                    <button
+                        className="control-button"
+                        onClick={() => sendAction("next")}
+                        disabled={!connected || !current}
+                        title="Próxima música"
+                    >
+                        ⏭
+                    </button>
+                </div>
+
+                <div className="playback-status">
+                    {loading
+                        ? "Conectando..."
+                        : playing
+                            ? "Reproduzindo"
+                            : "Pausado"}
+
+                    {loop && " · Repetição ativada"}
+                </div>
+            </section>
+
+            <section className="queue-section">
+                <div className="queue-header">
+                    <div>
+                        <div className="section-label">
+                            PRÓXIMAS MÚSICAS
+                        </div>
+
+                        <h2>Fila de reprodução</h2>
+                        <p>{queue.length} músicas na fila</p>
+                    </div>
+
+                    <button
+                        className="shuffle-button"
+                        onClick={() => sendAction("shuffle")}
+                        disabled={!connected || queue.length < 2}
+                    >
+                        ⤨ Shuffle
+                    </button>
+                </div>
+
+                <div className="queue-list">
+                    {queue.length === 0 ? (
+                        <div className="empty-queue">
+                            Não há músicas na fila.
+                        </div>
+                    ) : (
+                        queue.map((track, index) => (
+                            <div
+                                key={`${track.title}-${index}`}
+                                className={`queue-item ${
+                                    dragged === index ? "dragging" : ""
+                                }`}
+                                draggable={connected}
+                                onDragStart={() => setDragged(index)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => moveTrack(index)}
+                                onDragEnd={() => setDragged(null)}
+                            >
+                                <span className="queue-number">
+                                    {index + 1}
+                                </span>
+
+                                <TrackImage
+                                    src={track.thumbnail}
+                                    className="mini-art"
+                                />
+
+                                <div className="queue-track-info">
+                                    <strong>{track.title}</strong>
+                                    <span>{track.artist}</span>
+                                </div>
+
+                                <span className="duration">
+                                    {formatDuration(track.duration)}
+                                </span>
+
+                                <span className="drag-handle">⠿</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <p className="queue-hint">
+                    Arraste as músicas para reorganizar a fila.
+                </p>
+            </section>
+
+            <footer>
+                BicodeMel <span>•</span> Music for your server
+                <span> · </span>
+                {connected ? "Conectado" : "Desconectado"}
+            </footer>
+
+            {error && (
+                <div className="activity-error">
+                    {error}
+                </div>
+            )}
+        </main>
+    );
 }

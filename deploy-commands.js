@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const {
@@ -79,6 +80,16 @@ const commands = [
         .setDescription("Para a reprodução, limpa a fila e desconecta o bot.")
 ].map(command => command.toJSON());
 
+// Comando de entrada da Activity
+commands.push({
+    name: "Launch",
+    description: "Abre o painel musical do BicodeMel.",
+    type: 4,
+    handler: 2,
+    integration_types: [0],
+    contexts: [0]
+});
+
 // Configuração da API do Discord
 const rest = new REST({ version: "10" })
     .setToken(process.env.DISCORD_TOKEN);
@@ -101,6 +112,7 @@ async function deployCommands() {
 
         console.log("✅ Comandos globais registrados com sucesso!");
         console.log(`🎵 ${commands.length} comandos disponíveis.`);
+        console.log("🎮 Entry Point da Activity registrado!");
 
     } catch (error) {
         console.error("❌ Erro ao registrar comandos:", error);
