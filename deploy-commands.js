@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 
 const {
@@ -70,6 +69,10 @@ const commands = [
     new SlashCommandBuilder()
         .setName("loop")
         .setDescription("Ativa ou desativa a repetição da música atual."),
+
+    new SlashCommandBuilder()
+        .setName("shuffle")
+        .setDescription("Embaralha a fila sem interromper a música atual."),
 
     new SlashCommandBuilder()
         .setName("stop")

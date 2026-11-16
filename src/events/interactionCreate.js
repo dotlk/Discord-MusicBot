@@ -26,7 +26,8 @@ const {
     removeTrack,
     clearQueue,
     prioritizeTrack,
-    toggleLoop
+    toggleLoop,
+    shuffleQueue
 } = require("../audio/queueManager");
 
 const {
@@ -714,6 +715,56 @@ module.exports = function registerInteractionEvent(client) {
                 // ==============================
                 // /LOOP
                 // ==============================
+                // ==============================
+                // /SHUFFLE - Embaralhar a fila
+                // ==============================
+                case "shuffle": {
+                    const guildId = interaction.guildId;
+                    const connection = getVoiceConnection(guildId);
+
+                    if (!connection) {
+                        return await interaction.reply({
+                            content: "Não estou conectado a nenhum canal de voz.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const member = await interaction.guild.members.fetch(
+                        interaction.user.id
+                    );
+
+                    if (
+                        member.voice.channelId !==
+                        connection.joinConfig.channelId
+                    ) {
+                        return await interaction.reply({
+                            content: "Você precisa estar no mesmo canal de voz que eu.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const queue = getQueue(guildId);
+
+                    if (!queue?.tracks || queue.tracks.length < 2) {
+                        return await interaction.reply({
+                            content: "🔀 É necessário ter pelo menos duas músicas na fila para embaralhar.",
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+
+                    const count = shuffleQueue(guildId);
+
+                    await interaction.reply({
+                        content:
+                            `🔀 **Fila embaralhada!**\n` +
+                            `${count} músicas reorganizadas aleatoriamente.\n` +
+                            "A música atual continuará tocando normalmente.",
+                        flags: MessageFlags.Ephemeral
+                    });
+
+                    break;
+                }
+
                 case "loop": {
                     const guildId = interaction.guildId;
                     const connection = getVoiceConnection(guildId);
@@ -746,8 +797,12 @@ module.exports = function registerInteractionEvent(client) {
 
                     await interaction.reply({
                         content:
+                            `<@${interaction.user.id}> alterou a repetição da música atual.\n\n` +
                             `**Loop: ${enabled ? "ON" : "OFF"}**`,
-                        flags: MessageFlags.Ephemeral
+                        allowedMentions: {
+                            users: [interaction.user.id],
+                            parse: []
+                        }
                     });
 
                     break;
@@ -762,29 +817,33 @@ module.exports = function registerInteractionEvent(client) {
 
                     if (!connection) {
                         return await interaction.reply({
-                            content: "Não estou conectado a nenhum canal de voz.",
+                            content:
+                                "Não estou conectado a nenhum canal de voz.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    const member = await interaction.guild.members.fetch(
-                        interaction.user.id
-                    );
+                    const member =
+                        await interaction.guild.members.fetch(
+                            interaction.user.id
+                        );
 
                     if (
                         member.voice.channelId !==
                         connection.joinConfig.channelId
                     ) {
                         return await interaction.reply({
-                            content: "Você precisa estar no mesmo canal de voz que eu.",
+                            content:
+                                "Você precisa estar no mesmo canal de voz que eu.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    const position = interaction.options.getInteger(
-                        "position",
-                        true
-                    );
+                    const position =
+                        interaction.options.getInteger(
+                            "position",
+                            true
+                        );
 
                     const playNow =
                         interaction.options.getBoolean("playnow") ?? false;
@@ -797,7 +856,8 @@ module.exports = function registerInteractionEvent(client) {
                         position > queue.tracks.length
                     ) {
                         return await interaction.reply({
-                            content: "Posição inválida. Consulte `/queue`.",
+                            content:
+                                "Posição inválida. Consulte `/queue`.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -807,7 +867,8 @@ module.exports = function registerInteractionEvent(client) {
                         (!queue.currentTrack || !queue.player)
                     ) {
                         return await interaction.reply({
-                            content: "Não há uma música atual para interromper.",
+                            content:
+                                "Não há uma música atual para interromper.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
@@ -818,31 +879,24 @@ module.exports = function registerInteractionEvent(client) {
 
                     if (!result) {
                         return await interaction.reply({
-                            content: "Não foi possível reorganizar a fila.",
+                            content:
+                                "Não foi possível reorganizar a fila.",
                             flags: MessageFlags.Ephemeral
                         });
                     }
 
-                    if (playNow) {
-                        // Reprodução imediata: pública e com menção
-                        await interaction.reply({
-                            content:
-                                `<@${interaction.user.id}> iniciou uma reprodução imediata.\n\n` +
-                                `**Tocando agora**\n${result.selected.title}\n\n` +
-                                `**Devolvida à fila**\n${result.interrupted.title}`,
-                            allowedMentions: {
-                                users: [interaction.user.id],
-                                parse: []
-                            }
-                        });
-                    } else {
-                        // Apenas reorganização: privada e sem menção
-                        await interaction.reply({
-                            content:
-                                `**Próxima música**\n${result.selected.title}`,
-                            flags: MessageFlags.Ephemeral
-                        });
-                    }
+                    await interaction.reply({
+                        content: playNow
+                            ? `<@${interaction.user.id}> iniciou uma reprodução imediata.\n\n` +
+                              `**Tocando agora**\n${result.selected.title}\n\n` +
+                              `**Devolvida à fila**\n${result.interrupted.title}`
+                            : `<@${interaction.user.id}> alterou a próxima música.\n\n` +
+                              `**Próxima música**\n${result.selected.title}`,
+                        allowedMentions: {
+                            users: [interaction.user.id],
+                            parse: []
+                        }
+                    });
 
                     break;
                 }
@@ -897,10 +951,13 @@ module.exports = function registerInteractionEvent(client) {
 
                         await interaction.reply({
                             content:
-                                `⏸️ **Música pausada**\n${title}`,
-                            flags: MessageFlags.Ephemeral
+                                `⏸️ **Música pausada**\n${title}\n\n` +
+                                `Pausada por <@${interaction.user.id}>.`,
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
                         });
-
                         break;
                     }
 
@@ -919,10 +976,13 @@ module.exports = function registerInteractionEvent(client) {
 
                         await interaction.reply({
                             content:
-                                `▶️ **Reprodução retomada**\n${title}`,
-                            flags: MessageFlags.Ephemeral
+                                `▶️ **Reprodução retomada**\n${title}\n\n` +
+                                `Retomada por <@${interaction.user.id}>.`,
+                            allowedMentions: {
+                                users: [interaction.user.id],
+                                parse: []
+                            }
                         });
-
                         break;
                     }
 
@@ -930,7 +990,6 @@ module.exports = function registerInteractionEvent(client) {
                         content: "⏳ O player não está pronto para pausar ou retomar.",
                         flags: MessageFlags.Ephemeral
                     });
-
                     break;
                 }
 

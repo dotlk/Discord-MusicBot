@@ -91,6 +91,21 @@ function toggleLoop(guildId) {
     return queue.loop;
 }
 
+function shuffleQueue(guildId) {
+    const queue = readQueue(guildId);
+    if (!queue || queue.tracks.length < 2) return 0;
+
+    // Fisher-Yates: somente as músicas em espera.
+    for (let i = queue.tracks.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [queue.tracks[i], queue.tracks[j]] = [queue.tracks[j], queue.tracks[i]];
+    }
+
+    writeQueue(guildId, queue);
+    console.log(`🔀 Fila embaralhada: ${queue.tracks.length} músicas (${guildId})`);
+    return queue.tracks.length;
+}
+
 function getCurrentTrack(guildId) {
     return getQueue(guildId)?.currentTrack || null;
 }
@@ -115,6 +130,6 @@ function deleteQueue(guildId) {
 }
 module.exports = {
     createQueue, getQueue, addTrack, addTracks, nextTrack,
-    removeTrack, clearQueue, prioritizeTrack, toggleLoop, getCurrentTrack,
-    updateQueue, setConnection, setPlayer, deleteQueue
+    removeTrack, clearQueue, prioritizeTrack, toggleLoop, shuffleQueue,
+    getCurrentTrack, updateQueue, setConnection, setPlayer, deleteQueue
 };

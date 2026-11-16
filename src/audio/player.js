@@ -25,7 +25,7 @@ const {
 const {
     updateMusicStatus,
     clearMusicStatus
-} = require("../discord/musicStatus");
+} = require("../discord/musicstatus");
 
 const ytDlpPath = getYtDlpPath();
 
