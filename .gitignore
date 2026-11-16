@@ -1,5 +1,26 @@
+# Dependencies
 node_modules/
+
+# Environment variables
 .env
+.env.*
+!.env.example
+
+# Temporary files
 temp/
-bin/yt-dlp.exe
 *.log
+
+# Build output
+dist/
+coverage/
+.vite/
+
+# Windows binary (not used on Altare)
+bin/yt-dlp.exe
+
+# Local development
+*.local
+
+# Operating system
+.DS_Store
+Thumbs.db
