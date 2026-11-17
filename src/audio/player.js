@@ -1,3 +1,4 @@
+
 const {
     createAudioPlayer,
     createAudioResource,
@@ -454,6 +455,8 @@ async function playTrack(
         "--no-playlist",
         "--no-warnings",
         "--no-progress",
+        "--extractor-args",
+        "youtube:player_client=default,-web_embedded",
         "--format",
         "bestaudio/best"
     ];

@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from "react";
 import { DiscordSDK } from "@discord/embedded-app-sdk";
 import "./App.css";
@@ -484,8 +485,24 @@ export default function App() {
                             }
                         }
 
-                        // A primeira mensagem state conclui a inicialização.
-                        setLoading(false);
+                        /*
+                         * Initial loading:
+                         * - Com faixa atual, espera o player entrar em Playing ou Paused.
+                         * - Sem faixa e sem fila, libera a Activity vazia.
+                         * - Se houver faixa em preparação, mantém o loading.
+                         */
+                        if (
+                            (
+                                nextTrack &&
+                                ["playing", "paused"].includes(nextStatus)
+                            ) ||
+                            (
+                                !nextTrack &&
+                                nextQueue.length === 0
+                            )
+                        ) {
+                            setLoading(false);
+                        }
                     }
 
                     if (message.type === "progress") {
