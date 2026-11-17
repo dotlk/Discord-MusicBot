@@ -390,7 +390,6 @@ export default function App() {
 
                     if (message.type === "authenticated") {
                         setConnected(true);
-                        setLoading(false);
                         setError("");
                     }
 
@@ -446,6 +445,9 @@ export default function App() {
                                 setProcessingNext(false);
                             }
                         }
+
+                        // A primeira mensagem state conclui a inicialização.
+                        setLoading(false);
                     }
 
                     if (message.type === "progress") {
@@ -484,6 +486,9 @@ export default function App() {
                         processingNextRef.current = false;
                         skipSawStopRef.current = false;
                         setProcessingNext(false);
+
+                        // Evita manter a tela de loading em caso de erro.
+                        setLoading(false);
                     }
                 });
 
@@ -718,7 +723,7 @@ export default function App() {
             : 0;
 
     return (
-        <main className="app">
+        <main className={`app ${loading ? "is-loading" : ""}`}>
             <section className="now-playing">
                 <AudioVisualizer bandsRef={visualizerBandsRef} />
 

@@ -1,4 +1,3 @@
-
 html,
 body,
 #root {
@@ -44,6 +43,12 @@ button {
   letter-spacing: 1.5px;
 }
 
+/* Rótulo "TOCANDO AGORA" */
+.now-playing > .section-label {
+  margin-top: -50px;
+  margin-bottom: 50px;
+}
+
 /* Tocando agora */
 .now-playing {
   grid-column: 1;
@@ -58,6 +63,109 @@ button {
   text-align: center;
   position: relative;
   isolation: isolate;
+}
+
+/* Loading inicial da Activity */
+.app.is-loading {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app.is-loading .now-playing {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.app.is-loading .now-playing > :not(.visualizer) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app.is-loading .queue-section,
+.app.is-loading footer,
+.app.is-loading .activity-error {
+  display: none;
+}
+
+/* Loading: onda sequencial no sentido horário */
+.app.is-loading .visualizer {
+  width: min(75vw, 620px);
+  opacity: 1;
+  animation: none;
+  transform: translate(-50%, -50%) scale(1);
+  filter: drop-shadow(0 0 24px hsla(265, 95%, 70%, 0.65));
+}
+
+.app.is-loading .visualizer-bar {
+  height: 7px;
+  opacity: 0.45;
+  animation: loading-bar-wave 1.8s ease-in-out infinite;
+}
+
+/* Cada barra começa a animação um pouco depois da anterior */
+.app.is-loading .visualizer-bar:nth-child(1)  { animation-delay: 0s; }
+.app.is-loading .visualizer-bar:nth-child(2)  { animation-delay: -0.0375s; }
+.app.is-loading .visualizer-bar:nth-child(3)  { animation-delay: -0.075s; }
+.app.is-loading .visualizer-bar:nth-child(4)  { animation-delay: -0.1125s; }
+.app.is-loading .visualizer-bar:nth-child(5)  { animation-delay: -0.15s; }
+.app.is-loading .visualizer-bar:nth-child(6)  { animation-delay: -0.1875s; }
+.app.is-loading .visualizer-bar:nth-child(7)  { animation-delay: -0.225s; }
+.app.is-loading .visualizer-bar:nth-child(8)  { animation-delay: -0.2625s; }
+.app.is-loading .visualizer-bar:nth-child(9)  { animation-delay: -0.3s; }
+.app.is-loading .visualizer-bar:nth-child(10) { animation-delay: -0.3375s; }
+.app.is-loading .visualizer-bar:nth-child(11) { animation-delay: -0.375s; }
+.app.is-loading .visualizer-bar:nth-child(12) { animation-delay: -0.4125s; }
+.app.is-loading .visualizer-bar:nth-child(13) { animation-delay: -0.45s; }
+.app.is-loading .visualizer-bar:nth-child(14) { animation-delay: -0.4875s; }
+.app.is-loading .visualizer-bar:nth-child(15) { animation-delay: -0.525s; }
+.app.is-loading .visualizer-bar:nth-child(16) { animation-delay: -0.5625s; }
+.app.is-loading .visualizer-bar:nth-child(17) { animation-delay: -0.6s; }
+.app.is-loading .visualizer-bar:nth-child(18) { animation-delay: -0.6375s; }
+.app.is-loading .visualizer-bar:nth-child(19) { animation-delay: -0.675s; }
+.app.is-loading .visualizer-bar:nth-child(20) { animation-delay: -0.7125s; }
+.app.is-loading .visualizer-bar:nth-child(21) { animation-delay: -0.75s; }
+.app.is-loading .visualizer-bar:nth-child(22) { animation-delay: -0.7875s; }
+.app.is-loading .visualizer-bar:nth-child(23) { animation-delay: -0.825s; }
+.app.is-loading .visualizer-bar:nth-child(24) { animation-delay: -0.8625s; }
+.app.is-loading .visualizer-bar:nth-child(25) { animation-delay: -0.9s; }
+.app.is-loading .visualizer-bar:nth-child(26) { animation-delay: -0.9375s; }
+.app.is-loading .visualizer-bar:nth-child(27) { animation-delay: -0.975s; }
+.app.is-loading .visualizer-bar:nth-child(28) { animation-delay: -1.0125s; }
+.app.is-loading .visualizer-bar:nth-child(29) { animation-delay: -1.05s; }
+.app.is-loading .visualizer-bar:nth-child(30) { animation-delay: -1.0875s; }
+.app.is-loading .visualizer-bar:nth-child(31) { animation-delay: -1.125s; }
+.app.is-loading .visualizer-bar:nth-child(32) { animation-delay: -1.1625s; }
+.app.is-loading .visualizer-bar:nth-child(33) { animation-delay: -1.2s; }
+.app.is-loading .visualizer-bar:nth-child(34) { animation-delay: -1.2375s; }
+.app.is-loading .visualizer-bar:nth-child(35) { animation-delay: -1.275s; }
+.app.is-loading .visualizer-bar:nth-child(36) { animation-delay: -1.3125s; }
+.app.is-loading .visualizer-bar:nth-child(37) { animation-delay: -1.35s; }
+.app.is-loading .visualizer-bar:nth-child(38) { animation-delay: -1.3875s; }
+.app.is-loading .visualizer-bar:nth-child(39) { animation-delay: -1.425s; }
+.app.is-loading .visualizer-bar:nth-child(40) { animation-delay: -1.4625s; }
+.app.is-loading .visualizer-bar:nth-child(41) { animation-delay: -1.5s; }
+.app.is-loading .visualizer-bar:nth-child(42) { animation-delay: -1.5375s; }
+.app.is-loading .visualizer-bar:nth-child(43) { animation-delay: -1.575s; }
+.app.is-loading .visualizer-bar:nth-child(44) { animation-delay: -1.6125s; }
+.app.is-loading .visualizer-bar:nth-child(45) { animation-delay: -1.65s; }
+.app.is-loading .visualizer-bar:nth-child(46) { animation-delay: -1.6875s; }
+.app.is-loading .visualizer-bar:nth-child(47) { animation-delay: -1.725s; }
+.app.is-loading .visualizer-bar:nth-child(48) { animation-delay: -1.7625s; }
+
+@keyframes loading-bar-wave {
+  0%,
+  100% {
+    height: 7px;
+    opacity: 0.45;
+  }
+
+  50% {
+    height: 38px;
+    opacity: 1;
+  }
 }
 
 .track-art {
@@ -237,8 +345,6 @@ button {
   border: 1px solid rgba(41, 41, 48, 0.55);
   border-radius: 16px;
   background: rgba(25, 25, 31, 0.55);
-
-  /* Fila acima do visualizador */
   position: relative;
   z-index: 1;
 }
