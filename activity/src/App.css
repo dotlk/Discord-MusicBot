@@ -270,11 +270,6 @@ button {
   flex-shrink: 0;
 }
 
-.play-button:hover,
-.shuffle-button:hover {
-  background: #946ff0;
-}
-
 .pause-icon {
   display: flex;
   align-items: center;
@@ -395,25 +390,6 @@ button {
   font-size: 20px;
 }
 
-/* Imagens das capas */
-img.track-art,
-img.mini-art {
-  display: block;
-  object-fit: cover;
-  max-width: 100%;
-}
-
-img.track-art {
-  width: 150px;
-  height: 150px;
-}
-
-img.mini-art {
-  width: 39px;
-  height: 39px;
-  flex-shrink: 0;
-}
-
 .queue-track-info {
   display: flex;
   flex: 1;
@@ -463,6 +439,25 @@ footer {
 footer span {
   padding: 0 5px;
   color: #9a75f5;
+}
+
+/* Imagens das capas */
+img.track-art,
+img.mini-art {
+  display: block;
+  object-fit: cover;
+  max-width: 100%;
+}
+
+img.track-art {
+  width: 150px;
+  height: 150px;
+}
+
+img.mini-art {
+  width: 39px;
+  height: 39px;
+  flex-shrink: 0;
 }
 
 /* Janela compacta */
@@ -614,7 +609,6 @@ footer span {
     grid-template-columns: minmax(0, 48fr) minmax(0, 52fr);
   }
 
-  /* Player centralizado na coluna esquerda */
   .now-playing {
     width: 100%;
     min-width: 0;
@@ -649,13 +643,11 @@ footer span {
     margin: 10px auto;
   }
 
-  /* Controles ocultos na janelinha */
   .controls,
   .shuffle-button {
     display: none;
   }
 
-  /* Fila */
   .queue-section {
     width: 100%;
     max-width: none;
@@ -670,12 +662,10 @@ footer span {
     margin-bottom: 5px;
   }
 
-  /* Remove "Fila de reprodução" */
   .queue-header h2 {
     display: none;
   }
 
-  /* Mantém "PRÓXIMAS MÚSICAS" em destaque */
   .queue-header .section-label {
     font-size: 11px;
     letter-spacing: 1px;
@@ -686,7 +676,6 @@ footer span {
     font-size: 9px;
   }
 
-  /* Lista mais compacta */
   .queue-list {
     gap: 2px;
   }
@@ -1048,4 +1037,19 @@ footer span {
     width: 30px;
     height: 30px;
   }
+}
+
+/* CORREÇÃO: posição do rótulo em janelas baixas */
+@media (max-height: 650px) {
+  .now-playing > .section-label {
+    margin-top: 20px !important;
+    margin-bottom: 0 !important;
+  }
+}
+
+/* CORREÇÃO: impede que a capa seja achatada em janelas compactas */
+.now-playing img.track-art {
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
 }
