@@ -278,6 +278,7 @@ export default function App() {
     const [playbackStatus, setPlaybackStatus] = useState("idle");
     const [processingNext, setProcessingNext] = useState(false);
     const [processingAutoNext, setProcessingAutoNext] = useState(false);
+    const [processingSeek, setProcessingSeek] = useState(false);
     const [loop, setLoop] = useState(false);
     const [dragged, setDragged] = useState(null);
 
@@ -289,6 +290,11 @@ export default function App() {
     const progressBaseRef = useRef(0);
     const progressReceivedAtRef = useRef(Date.now());
     const seekingRef = useRef(false);
+
+    const processingSeekRef = useRef(false);
+    const seekRequestSequenceRef = useRef(0);
+    const pendingSeekRequestRef = useRef(null);
+    const seekPreviousProgressRef = useRef(0);
 
     const processingNextRef = useRef(false);
     const skipSawStopRef = useRef(false);
@@ -430,13 +436,15 @@ export default function App() {
 
                         const nextPosition = Number(message.positionMs);
 
-                        progressBaseRef.current =
-                            Number.isFinite(nextPosition)
-                                ? Math.max(0, nextPosition)
-                                : 0;
+                        if (!processingSeekRef.current) {
+                            progressBaseRef.current =
+                                Number.isFinite(nextPosition)
+                                    ? Math.max(0, nextPosition)
+                                    : 0;
 
-                        progressReceivedAtRef.current = Date.now();
-                        setProgressMs(progressBaseRef.current);
+                            progressReceivedAtRef.current = Date.now();
+                            setProgressMs(progressBaseRef.current);
+                        }
 
                         if (!nextTrack) {
                             progressBaseRef.current = 0;
@@ -483,7 +491,10 @@ export default function App() {
                     if (message.type === "progress") {
                         const nextPosition = Number(message.positionMs);
 
-                        if (Number.isFinite(nextPosition)) {
+                        if (
+                            Number.isFinite(nextPosition) &&
+                            !processingSeekRef.current
+                        ) {
                             progressBaseRef.current = Math.max(
                                 0,
                                 nextPosition
@@ -496,6 +507,24 @@ export default function App() {
                         if (message.status) {
                             setPlaybackStatus(message.status);
                             setPlaying(message.status === "playing");
+                        }
+                    }
+
+                    if (message.type === "seekComplete") {
+                        if (
+                            message.requestId === pendingSeekRequestRef.current
+                        ) {
+                            processingSeekRef.current = false;
+                            pendingSeekRequestRef.current = null;
+                            setProcessingSeek(false);
+
+                            const finalPosition = Number(message.positionMs);
+
+                            if (Number.isFinite(finalPosition)) {
+                                progressBaseRef.current = Math.max(0, finalPosition);
+                                progressReceivedAtRef.current = Date.now();
+                                setProgressMs(progressBaseRef.current);
+                            }
                         }
                     }
 
@@ -512,6 +541,21 @@ export default function App() {
                         setError(
                             message.message || "Erro no servidor."
                         );
+
+                        if (
+                            message.requestId &&
+                            message.requestId === pendingSeekRequestRef.current
+                        ) {
+                            processingSeekRef.current = false;
+                            pendingSeekRequestRef.current = null;
+                            setProcessingSeek(false);
+
+                            progressBaseRef.current =
+                                seekPreviousProgressRef.current;
+
+                            progressReceivedAtRef.current = Date.now();
+                            setProgressMs(progressBaseRef.current);
+                        }
 
                         processingNextRef.current = false;
                         skipSawStopRef.current = false;
@@ -535,6 +579,10 @@ export default function App() {
                         skipTrackKeyRef.current = null;
                         setProcessingNext(false);
                         setProcessingAutoNext(false);
+
+                        processingSeekRef.current = false;
+                        pendingSeekRequestRef.current = null;
+                        setProcessingSeek(false);
                     }
                 });
 
@@ -577,7 +625,7 @@ export default function App() {
 
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             setError("Sem conexão com o bot.");
-            return;
+            return false;
         }
 
         socket.send(JSON.stringify({
@@ -585,6 +633,8 @@ export default function App() {
             action,
             ...extra
         }));
+
+        return true;
     }
 
     function getSeekPosition(event) {
@@ -607,7 +657,12 @@ export default function App() {
     }
 
     function handleSeekStart(event) {
-        if (!connected || !current || !Number(current.duration)) return;
+        if (
+            !connected ||
+            !current ||
+            !Number(current.duration) ||
+            processingSeekRef.current
+        ) return;
 
         event.preventDefault();
 
@@ -639,15 +694,35 @@ export default function App() {
         seekingRef.current = false;
         setSeekPreviewMs(null);
 
-        if (position === null) return;
+        if (position === null || processingSeekRef.current) return;
 
+        const requestId = ++seekRequestSequenceRef.current;
+
+        seekPreviousProgressRef.current = progressMs;
+        pendingSeekRequestRef.current = requestId;
+        processingSeekRef.current = true;
+        setProcessingSeek(true);
+
+        // Atualização otimista da barra. Ignora mensagens antigas
+        // de progresso até o servidor confirmar o novo fluxo.
         progressBaseRef.current = position;
         progressReceivedAtRef.current = Date.now();
         setProgressMs(position);
 
-        sendAction("seek", {
-            positionSeconds: position / 1000
+        const sent = sendAction("seek", {
+            positionSeconds: position / 1000,
+            requestId
         });
+
+        if (!sent) {
+            processingSeekRef.current = false;
+            pendingSeekRequestRef.current = null;
+            setProcessingSeek(false);
+
+            progressBaseRef.current = seekPreviousProgressRef.current;
+            progressReceivedAtRef.current = Date.now();
+            setProgressMs(progressBaseRef.current);
+        }
     }
 
     function handleSeekCancel() {
@@ -658,7 +733,12 @@ export default function App() {
     function handleNext() {
         const socket = socketRef.current;
 
-        if (!socket || socket.readyState !== WebSocket.OPEN || !current) {
+        if (
+            !socket ||
+            socket.readyState !== WebSocket.OPEN ||
+            !current ||
+            processingSeekRef.current
+        ) {
             return;
         }
 
@@ -775,11 +855,11 @@ export default function App() {
                     <h2>{current?.title || "Nenhuma música"}</h2>
 
                     <p>
-                        {processingNext || processingAutoNext ? (
+                        {processingNext || processingAutoNext || processingSeek ? (
                             <span
                                 className="skip-spinner"
                                 role="status"
-                                aria-label="Carregando próxima música"
+                                aria-label="Carregando música"
                             />
                         ) : (
                             current?.artist || "Aguardando música"
@@ -795,10 +875,13 @@ export default function App() {
                         aria-valuemin={0}
                         aria-valuemax={Number.isFinite(durationMs) ? durationMs : 0}
                         aria-valuenow={displayedProgressMs}
-                        aria-disabled={!connected || !current}
-                        tabIndex={connected && current ? 0 : -1}
+                        aria-disabled={!connected || !current || processingSeek}
+                        tabIndex={connected && current && !processingSeek ? 0 : -1}
                         style={{
-                            cursor: connected && current ? "pointer" : "default",
+                            cursor:
+                                connected && current && !processingSeek
+                                    ? "pointer"
+                                    : "default",
                             touchAction: "none"
                         }}
                         onPointerDown={handleSeekStart}
@@ -852,6 +935,7 @@ export default function App() {
                         disabled={
                             !connected ||
                             !current ||
+                            processingSeek ||
                             !["playing", "paused"].includes(playbackStatus)
                         }
                         title={playing ? "Pausar" : "Retomar"}
@@ -877,7 +961,12 @@ export default function App() {
                     <button
                         className="control-button"
                         onClick={handleNext}
-                        disabled={!connected || !current || processingNext}
+                        disabled={
+                            !connected ||
+                            !current ||
+                            processingNext ||
+                            processingSeek
+                        }
                         title="Próxima música"
                     >
                         ⏭

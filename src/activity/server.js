@@ -16,6 +16,7 @@ const {
 const {
     skipTrack,
     seekTrack,
+    isSeekPending,
     getPlaybackPosition,
     visualizerEvents
 } = require("../audio/player");
@@ -356,6 +357,13 @@ async function handleAction(client, socket, message) {
 
     switch (message.action) {
         case "togglePlayback": {
+            // Impede que o usuário despause durante o carregamento do seek.
+            if (isSeekPending(guildId)) {
+                throw new Error(
+                    "Aguarde o carregamento da nova posição."
+                );
+            }
+
             const status = queue.player.state.status;
 
             if (status === AudioPlayerStatus.Playing) {
@@ -425,6 +433,12 @@ async function handleAction(client, socket, message) {
                     "Não foi possível mudar a posição da música."
                 );
             }
+
+            // Confirma ao cliente que o novo fluxo já está tocando.
+            send(socket, "seekComplete", {
+                requestId: message.requestId,
+                positionMs: getPlaybackPosition(guildId)
+            });
 
             break;
         }
@@ -635,8 +649,11 @@ function startActivityServer(client) {
         socket.authenticated = false;
 
         socket.on("message", async rawMessage => {
+            let requestId;
+
             try {
                 const message = JSON.parse(rawMessage.toString());
+                requestId = message.requestId;
 
                 if (!socket.authenticated) {
                     if (message.type !== "auth") {
@@ -683,7 +700,8 @@ function startActivityServer(client) {
 
             } catch (error) {
                 send(socket, "error", {
-                    message: error.message || "Erro interno."
+                    message: error.message || "Erro interno.",
+                    requestId
                 });
             }
         });

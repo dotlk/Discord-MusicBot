@@ -1,4 +1,3 @@
-
 const {
     createAudioPlayer,
     createAudioResource,
@@ -434,7 +433,7 @@ async function playTrack(
         return null;
     }
 
-    // Guarda o fluxo anterior durante o seek.
+    // Mantém o fluxo anterior vivo durante o carregamento do seek.
     const previousStream = preserveExistingStream
         ? activeStreams.get(guildId)
         : null;
@@ -459,13 +458,6 @@ async function playTrack(
         "bestaudio/best"
     ];
 
-    if (startSeconds > 0) {
-        ytDlpArgs.push(
-            "--download-sections",
-            `*${startSeconds}-`
-        );
-    }
-
     ytDlpArgs.push(
         "--output",
         "-",
@@ -486,13 +478,26 @@ async function playTrack(
     // FFMPEG
     // ==============================
 
-    const ffmpeg = spawn(ffmpegPath, [
+    const ffmpegArgs = [
         "-hide_banner",
         "-loglevel",
         "error",
         "-nostdin",
         "-i",
-        "pipe:0",
+        "pipe:0"
+    ];
+
+    // Faz o seek na saída do FFmpeg, decodificando desde o início.
+    // Isso evita os cortes imprecisos que podem ocorrer com
+    // --download-sections no fluxo de áudio do yt-dlp.
+    if (startSeconds > 0) {
+        ffmpegArgs.push(
+            "-ss",
+            String(startSeconds)
+        );
+    }
+
+    ffmpegArgs.push(
         "-vn",
         "-f",
         "s16le",
@@ -501,12 +506,16 @@ async function playTrack(
         "-ac",
         "2",
         "pipe:1"
-    ], {
-        windowsHide: true,
-        stdio: ["pipe", "pipe", "pipe"]
-    });
+    );
 
-    ytDlp.stdout.pipe(ffmpeg.stdin);
+    const ffmpeg = spawn(
+        ffmpegPath,
+        ffmpegArgs,
+        {
+            windowsHide: true,
+            stdio: ["pipe", "pipe", "pipe"]
+        }
+    );
 
     const stream = {
         ytDlp,
@@ -514,6 +523,42 @@ async function playTrack(
     };
 
     activeStreams.set(guildId, stream);
+
+    let seekCommitted = false;
+    let startupSettled = false;
+    let startupTimer = null;
+
+    const firstAudio = new Promise((resolve, reject) => {
+        const finish = (callback, value) => {
+            if (startupSettled) return;
+
+            startupSettled = true;
+
+            if (startupTimer) {
+                clearTimeout(startupTimer);
+                startupTimer = null;
+            }
+
+            callback(value);
+        };
+
+        ffmpeg.stdout.once("data", () => {
+            finish(resolve);
+        });
+
+        startupTimer = setTimeout(() => {
+            const error = new Error(
+                "Tempo esgotado ao preparar o áudio."
+            );
+
+            finish(reject, error);
+            failStream("FFmpeg", error);
+        }, 120000);
+
+        stream.rejectStartup = error => {
+            finish(reject, error);
+        };
+    });
 
     function isCurrentStream() {
         return (
@@ -530,7 +575,22 @@ async function playTrack(
             error
         );
 
+        if (preserveExistingStream && !seekCommitted) {
+            // O novo fluxo falhou antes de assumir o player.
+            // Restaura o fluxo anterior sem interromper a música.
+            if (previousStream) {
+                activeStreams.set(guildId, previousStream);
+            } else {
+                activeStreams.delete(guildId);
+            }
+
+            destroyStream(stream);
+            stream.rejectStartup?.(error);
+            return;
+        }
+
         cleanupStream(guildId);
+        stream.rejectStartup?.(error);
 
         const currentQueue = getQueue(guildId);
 
@@ -621,12 +681,22 @@ async function playTrack(
                     `Processo encerrado com código ${code}`
                 )
             );
+        } else if (
+            isCurrentStream() &&
+            !startupSettled
+        ) {
+            failStream(
+                "FFmpeg",
+                new Error("O fluxo terminou sem fornecer áudio.")
+            );
         }
     });
 
     // ==============================
     // RECURSO DE ÁUDIO
     // ==============================
+
+    ytDlp.stdout.pipe(ffmpeg.stdin);
 
     const visualizerStream =
         createVisualizerStream(guildId);
@@ -644,6 +714,16 @@ async function playTrack(
 
     resource.volume.setVolume(0.7);
 
+    // Só troca o recurso atual quando já existe áudio disponível.
+    await firstAudio;
+
+    if (
+        generation !== getGeneration(guildId) ||
+        activeStreams.get(guildId) !== stream
+    ) {
+        return null;
+    }
+
     playbackPositions.set(guildId, {
         offsetMs: startSeconds * 1000,
         resource
@@ -654,11 +734,10 @@ async function playTrack(
         status: "playing"
     });
 
-    // Substitui diretamente o recurso anterior.
     queue.player.play(resource);
+    seekCommitted = true;
 
-    // O novo recurso assumiu a reprodução.
-    // Agora podemos encerrar o fluxo anterior.
+    // O fluxo anterior só é encerrado depois que o novo assumiu.
     if (
         previousStream &&
         previousStream !== stream
@@ -809,23 +888,14 @@ async function seekTrack(guildId, positionSeconds) {
         !queue?.player ||
         !queue.currentTrack ||
         !Number.isFinite(positionSeconds) ||
-        positionSeconds < 0
+        positionSeconds < 0 ||
+        seekRequests.has(guildId)
     ) {
         return false;
     }
 
     const player = queue.player;
     const track = queue.currentTrack;
-
-    const previousSeek =
-        seekRequests.get(guildId);
-
-    if (
-        player.state.status === AudioPlayerStatus.Idle &&
-        !previousSeek
-    ) {
-        return false;
-    }
 
     if (
         Number.isFinite(track.duration) &&
@@ -835,12 +905,20 @@ async function seekTrack(guildId, positionSeconds) {
         return false;
     }
 
-    // Preserva o estado original de pausa.
-    const wasPaused = previousSeek
-        ? previousSeek.wasPaused
-        : player.state.status === AudioPlayerStatus.Paused;
+    const originalStatus = player.state.status;
 
-    // Identificador exclusivo desta solicitação.
+    if (
+        originalStatus !== AudioPlayerStatus.Playing &&
+        originalStatus !== AudioPlayerStatus.Paused &&
+        originalStatus !== AudioPlayerStatus.AutoPaused
+    ) {
+        return false;
+    }
+
+    const wasPaused =
+        originalStatus === AudioPlayerStatus.Paused ||
+        originalStatus === AudioPlayerStatus.AutoPaused;
+
     const seekId =
         (seekSequences.get(guildId) || 0) + 1;
 
@@ -851,14 +929,16 @@ async function seekTrack(guildId, positionSeconds) {
         wasPaused
     });
 
-    // Invalida as operações anteriores.
+    // Pausa imediatamente e mantém o fluxo antigo disponível.
+    if (!wasPaused) {
+        player.pause();
+    }
+
     const generation =
         invalidateGeneration(guildId);
 
     try {
-        // Não usamos player.stop().
-        // O novo recurso substitui diretamente o atual.
-        await playTrack(
+        const result = await playTrack(
             guildId,
             track,
             generation,
@@ -869,7 +949,6 @@ async function seekTrack(guildId, positionSeconds) {
         const latestSeek =
             seekRequests.get(guildId);
 
-        // Só o seek mais recente pode finalizar.
         if (
             !latestSeek ||
             latestSeek.id !== seekId ||
@@ -878,6 +957,12 @@ async function seekTrack(guildId, positionSeconds) {
             return false;
         }
 
+        if (!result) {
+            throw new Error("O novo fluxo de áudio não ficou pronto.");
+        }
+
+        // Preserva uma pausa que já existia antes do seek.
+        // Se estava tocando, playTrack já iniciou a nova posição.
         if (wasPaused) {
             player.pause();
         }
@@ -885,7 +970,7 @@ async function seekTrack(guildId, positionSeconds) {
         seekRequests.delete(guildId);
 
         console.log(
-            `⏩ Seek: ${track.title} → ${positionSeconds}s`
+            `⏩ Seek: ${track.title} → ${positionSeconds.toFixed(2)}s`
         );
 
         return true;
@@ -893,7 +978,6 @@ async function seekTrack(guildId, positionSeconds) {
         const latestSeek =
             seekRequests.get(guildId);
 
-        // Um seek antigo não pode interferir no atual.
         if (
             !latestSeek ||
             latestSeek.id !== seekId ||
@@ -907,17 +991,20 @@ async function seekTrack(guildId, positionSeconds) {
             error
         );
 
+        // O fluxo antigo continua disponível. Retoma apenas se
+        // a música estava tocando antes de iniciar o seek.
         seekRequests.delete(guildId);
 
-        cleanupStream(guildId);
-        playbackPositions.delete(guildId);
-
-        updateQueue(guildId, {
-            status: "idle"
-        });
+        if (!wasPaused) {
+            player.unpause();
+        }
 
         return false;
     }
+}
+
+function isSeekPending(guildId) {
+    return seekRequests.has(guildId);
 }
 
 // ==============================
@@ -1026,6 +1113,7 @@ module.exports = {
     playPrioritizedNow,
     stopPlayer,
     seekTrack,
+    isSeekPending,
     getPlaybackPosition,
     visualizerEvents
 };
