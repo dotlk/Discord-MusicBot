@@ -12,6 +12,7 @@ const {
 } = require("./player");
 
 const {
+    getQueue,
     deleteQueue
 } = require("./queueManager");
 
@@ -66,22 +67,47 @@ async function joinChannel(channel) {
     }
 }
 
-// Desconecta o bot e encerra a fila
+// Desconecta o bot e encerra completamente a fila
 function leaveChannel(guildId) {
-    const connection = getVoiceConnection(guildId);
+    const queue = getQueue(guildId);
 
-    if (!connection) return false;
+    // Recupera a conexão mesmo se ela não estiver mais
+    // registrada no gerenciador do Discord.
+    const connection =
+        getVoiceConnection(guildId) ||
+        queue?.connection;
 
-    // Interrompe a reprodução
-    stopPlayer(guildId);
+    // Interrompe a reprodução e encerra os processos de áudio.
+    try {
+        stopPlayer(guildId);
+    } catch (error) {
+        console.error(
+            `Erro ao interromper o player (${guildId}):`,
+            error
+        );
+    }
 
-    // Desconecta do canal
-    connection.destroy();
+    // Desconecta do canal, caso a conexão ainda exista.
+    try {
+        if (
+            connection &&
+            connection.state.status !== VoiceConnectionStatus.Destroyed
+        ) {
+            connection.destroy();
+        }
+    } catch (error) {
+        console.error(
+            `Erro ao desconectar do canal (${guildId}):`,
+            error
+        );
+    } finally {
+        // Remove os dados persistentes e as referências em memória.
+        deleteQueue(guildId);
+    }
 
-    // Remove os dados da fila
-    deleteQueue(guildId);
-
-    console.log(`🔇 Desconectado do servidor ${guildId}`);
+    console.log(
+        `🔇 Desconectado e fila encerrada: ${guildId}`
+    );
 
     return true;
 }
