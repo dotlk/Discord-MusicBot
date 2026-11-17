@@ -1,4 +1,3 @@
-
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -10,7 +9,8 @@ const {
     getQueue,
     toggleLoop,
     shuffleQueue,
-    moveTrack
+    moveTrack,
+    onQueueChange
 } = require("../audio/queueManager");
 
 const {
@@ -607,6 +607,11 @@ function startActivityServer(client) {
 
     const wss = new WebSocketServer({ server });
 
+    // Envia imediatamente as alterações da fila para a Activity.
+    const unsubscribeQueue = onQueueChange(guildId => {
+        broadcast(guildId);
+    });
+
     // Encaminha as frequências analisadas pelo player
     // somente para os usuários conectados à mesma guild.
     visualizerEvents.on("data", ({ guildId, bands, timestamp }) => {
@@ -728,6 +733,7 @@ function startActivityServer(client) {
 
     server.on("close", () => {
         clearInterval(syncInterval);
+        unsubscribeQueue();
         lastSnapshots.clear();
     });
 

@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import { DiscordSDK } from "@discord/embedded-app-sdk";
 import "./App.css";
@@ -257,7 +256,8 @@ function AudioVisualizer({ bandsRef }) {
                         index % 2 === 0 ? "outward" : "inward"
                     }`}
                     style={{
-                        "--angle": `${(index / 48) * 360}deg`
+                        "--angle": `${(index / 48) * 360}deg`,
+                        "--loading-delay": `${index * -0.0375}s`
                     }}
                 />
             ))}
@@ -277,6 +277,7 @@ export default function App() {
     const [playing, setPlaying] = useState(false);
     const [playbackStatus, setPlaybackStatus] = useState("idle");
     const [processingNext, setProcessingNext] = useState(false);
+    const [processingAutoNext, setProcessingAutoNext] = useState(false);
     const [loop, setLoop] = useState(false);
     const [dragged, setDragged] = useState(null);
 
@@ -292,6 +293,7 @@ export default function App() {
     const processingNextRef = useRef(false);
     const skipSawStopRef = useRef(false);
     const skipTrackKeyRef = useRef(null);
+    const lastPlayingTrackRef = useRef(false);
 
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState("");
@@ -404,6 +406,28 @@ export default function App() {
                         setPlaybackStatus(nextStatus);
                         setPlaying(nextStatus === "playing");
 
+                        /*
+                         * Detecta a transição automática para a próxima música.
+                         *
+                         * O servidor envia o estado da fila imediatamente.
+                         * Quando a faixa atual é removida e ainda há músicas
+                         * na fila, mostramos o spinner até a próxima começar.
+                         */
+                        if (nextTrack && nextStatus === "playing") {
+                            lastPlayingTrackRef.current = true;
+                            setProcessingAutoNext(false);
+                        } else if (
+                            !nextTrack &&
+                            nextQueue.length > 0 &&
+                            lastPlayingTrackRef.current &&
+                            !processingNextRef.current
+                        ) {
+                            setProcessingAutoNext(true);
+                        } else if (!nextTrack && nextQueue.length === 0) {
+                            lastPlayingTrackRef.current = false;
+                            setProcessingAutoNext(false);
+                        }
+
                         const nextPosition = Number(message.positionMs);
 
                         progressBaseRef.current =
@@ -430,18 +454,24 @@ export default function App() {
                                 skipSawStopRef.current = true;
                             }
 
+                            /*
+                             * O loading só termina quando a próxima música
+                             * realmente começa a tocar.
+                             *
+                             * Um estado intermediário sem música não encerra
+                             * o loading enquanto o bot resolve a próxima faixa.
+                             */
                             if (
-                                !nextTrack ||
+                                nextTrack &&
+                                nextStatus === "playing" &&
                                 (
-                                    nextStatus === "playing" &&
-                                    (
-                                        skipSawStopRef.current ||
-                                        nextTrackKey !== skipTrackKeyRef.current
-                                    )
+                                    skipSawStopRef.current ||
+                                    nextTrackKey !== skipTrackKeyRef.current
                                 )
                             ) {
                                 processingNextRef.current = false;
                                 skipSawStopRef.current = false;
+                                skipTrackKeyRef.current = null;
                                 setProcessingNext(false);
                             }
                         }
@@ -485,7 +515,9 @@ export default function App() {
 
                         processingNextRef.current = false;
                         skipSawStopRef.current = false;
+                        skipTrackKeyRef.current = null;
                         setProcessingNext(false);
+                        setProcessingAutoNext(false);
 
                         // Evita manter a tela de loading em caso de erro.
                         setLoading(false);
@@ -499,7 +531,10 @@ export default function App() {
                         setError("Conexão com o bot encerrada.");
 
                         processingNextRef.current = false;
+                        skipSawStopRef.current = false;
+                        skipTrackKeyRef.current = null;
                         setProcessingNext(false);
+                        setProcessingAutoNext(false);
                     }
                 });
 
@@ -627,12 +662,14 @@ export default function App() {
             return;
         }
 
+        // Evita disparar vários skips enquanto um já está em andamento.
+        if (processingNextRef.current) return;
+
         processingNextRef.current = true;
         skipSawStopRef.current = false;
 
-        skipTrackKeyRef.current = current
-            ? `${current.title}|${current.artist}`
-            : null;
+        skipTrackKeyRef.current =
+            `${current.title}|${current.artist}`;
 
         setProcessingNext(true);
 
@@ -736,7 +773,18 @@ export default function App() {
 
                 <div className="track-info">
                     <h2>{current?.title || "Nenhuma música"}</h2>
-                    <p>{current?.artist || "Aguardando música"}</p>
+
+                    <p>
+                        {processingNext || processingAutoNext ? (
+                            <span
+                                className="skip-spinner"
+                                role="status"
+                                aria-label="Carregando próxima música"
+                            />
+                        ) : (
+                            current?.artist || "Aguardando música"
+                        )}
+                    </p>
                 </div>
 
                 <div className={`progress ${seekPreviewMs !== null ? "is-seeking" : ""}`}>
@@ -829,27 +877,11 @@ export default function App() {
                     <button
                         className="control-button"
                         onClick={handleNext}
-                        disabled={!connected || !current}
+                        disabled={!connected || !current || processingNext}
                         title="Próxima música"
                     >
                         ⏭
                     </button>
-                </div>
-
-                <div className="playback-status">
-                    {loading
-                        ? "Conectando..."
-                        : processingNext
-                            ? "Processando..."
-                            : playbackStatus === "playing"
-                                ? "Reproduzindo"
-                                : playbackStatus === "paused"
-                                    ? "Pausado"
-                                    : current
-                                        ? "Preparando reprodução..."
-                                        : "Aguardando música"}
-
-                    {loop && " · Repetição ativada"}
                 </div>
             </section>
 
