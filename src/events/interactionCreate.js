@@ -15,6 +15,11 @@ const {
 } = require("@discordjs/voice");
 
 const {
+    pauseMusicStatus,
+    resumeMusicStatus
+} = require("../discord/musicStatus");
+
+const {
     joinChannel,
     leaveChannel
 } = require("../audio/voiceManager");
@@ -981,6 +986,8 @@ module.exports = function registerInteractionEvent(client) {
                             });
                         }
 
+                        pauseMusicStatus(guildId);
+
                         console.log(`⏸️ Música pausada: ${title}`);
 
                         await interaction.reply({
@@ -1005,6 +1012,8 @@ module.exports = function registerInteractionEvent(client) {
                                 flags: MessageFlags.Ephemeral
                             });
                         }
+
+                        resumeMusicStatus(guildId);
 
                         console.log(`▶️ Música retomada: ${title}`);
 
