@@ -52,6 +52,8 @@ button {
 
 /* Tocando agora */
 .now-playing {
+  container-name: player;
+  container-type: inline-size;
   grid-column: 1;
   grid-row: 1;
   min-width: 0;
@@ -898,5 +900,152 @@ footer span {
 
   .visualizer-bar {
     width: 2px;
+  }
+}
+
+/* Responsividade independente da seção Tocando agora.
+   Não altera o Audio Visualizer. */
+@container player (max-width: 520px) {
+  .now-playing > .section-label {
+    margin-top: -30px;
+    margin-bottom: 30px;
+    font-size: 9px;
+    letter-spacing: 1.2px;
+  }
+
+  .track-art,
+  img.track-art {
+    width: clamp(75px, 22cqi, 115px);
+    height: clamp(75px, 22cqi, 115px);
+  }
+
+  .track-art {
+    margin: 12px auto 10px;
+    font-size: clamp(32px, 8cqi, 48px);
+  }
+
+  .track-info h2 {
+    font-size: clamp(15px, 4.2cqi, 20px);
+    overflow-wrap: anywhere;
+  }
+
+  .track-info p {
+    margin-top: 5px;
+    font-size: clamp(10px, 2.6cqi, 12px);
+  }
+
+  .progress {
+    width: min(92%, 320px);
+    margin: 14px auto;
+  }
+
+  .progress-time {
+    font-size: 10px;
+  }
+
+  .controls {
+    gap: clamp(10px, 4cqi, 20px);
+  }
+
+  .control-button {
+    font-size: clamp(18px, 5cqi, 23px);
+  }
+
+  .play-button {
+    width: clamp(38px, 11cqi, 48px);
+    height: clamp(38px, 11cqi, 48px);
+  }
+
+  .play-icon {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@container player (max-width: 360px) {
+  .now-playing > .section-label {
+    margin-top: -20px;
+    margin-bottom: 20px;
+    font-size: 8px;
+  }
+
+  .track-art,
+  img.track-art {
+    width: 62px;
+    height: 62px;
+  }
+
+  .track-art {
+    margin: 7px auto;
+    font-size: 28px;
+  }
+
+  .track-info h2 {
+    font-size: 13px;
+  }
+
+  .track-info p {
+    font-size: 9px;
+  }
+
+  .progress {
+    width: 96%;
+    margin: 9px auto;
+  }
+
+  .progress-time {
+    font-size: 9px;
+  }
+
+  .controls {
+    gap: 9px;
+  }
+
+  .control-button {
+    font-size: 17px;
+  }
+
+  .play-button {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@container player (max-width: 280px) {
+  .now-playing > .section-label {
+    margin-top: -12px;
+    margin-bottom: 12px;
+    font-size: 7px;
+  }
+
+  .track-art,
+  img.track-art {
+    width: 48px;
+    height: 48px;
+  }
+
+  .track-info h2 {
+    font-size: 11px;
+  }
+
+  .track-info p {
+    font-size: 8px;
+  }
+
+  .progress {
+    margin: 7px auto;
+  }
+
+  .controls {
+    gap: 6px;
+  }
+
+  .control-button {
+    font-size: 15px;
+  }
+
+  .play-button {
+    width: 30px;
+    height: 30px;
   }
 }

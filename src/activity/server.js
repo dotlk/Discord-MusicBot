@@ -1,3 +1,4 @@
+
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -20,6 +21,11 @@ const {
     getPlaybackPosition,
     visualizerEvents
 } = require("../audio/player");
+
+const {
+    pauseMusicStatus,
+    resumeMusicStatus
+} = require("../discord/musicStatus");
 
 const DISCORD_API = "https://discord.com/api/v10";
 const REDIRECT_URI = "https://127.0.0.1";
@@ -367,12 +373,26 @@ async function handleAction(client, socket, message) {
             const status = queue.player.state.status;
 
             if (status === AudioPlayerStatus.Playing) {
-                queue.player.pause();
+                if (!queue.player.pause()) {
+                    throw new Error(
+                        "Não foi possível pausar a música."
+                    );
+                }
+
+                pauseMusicStatus(guildId);
+
             } else if (
                 status === AudioPlayerStatus.Paused ||
                 status === AudioPlayerStatus.AutoPaused
             ) {
-                queue.player.unpause();
+                if (!queue.player.unpause()) {
+                    throw new Error(
+                        "Não foi possível retomar a música."
+                    );
+                }
+
+                resumeMusicStatus(guildId);
+
             } else {
                 throw new Error(
                     "O player não está pronto para essa ação."
