@@ -134,6 +134,25 @@ button {
   box-shadow: 0 12px 45px #8257e533;
 }
 
+/* Símbolo musical das capas sem imagem */
+.track-art span,
+.mini-art span {
+  display: block;
+  color: #b79bff;
+  font-family: Arial, sans-serif;
+  font-weight: 400;
+  line-height: 1;
+  user-select: none;
+}
+
+.track-art span {
+  font-size: 65px;
+}
+
+.mini-art span {
+  font-size: 20px;
+}
+
 .track-info {
   width: 100%;
   min-width: 0;
@@ -892,8 +911,7 @@ img.mini-art {
   }
 }
 
-/* Responsividade independente da seção Tocando agora.
-   Não altera o Audio Visualizer. */
+/* Responsividade independente da seção Tocando agora. */
 @container player (max-width: 520px) {
   .now-playing > .section-label {
     margin-top: -30px;
@@ -1039,7 +1057,7 @@ img.mini-art {
   }
 }
 
-/* CORREÇÃO: posição do rótulo em janelas baixas */
+/* Correção: posição do rótulo em janelas baixas */
 @media (max-height: 650px) {
   .now-playing > .section-label {
     margin-top: 20px !important;
@@ -1047,9 +1065,376 @@ img.mini-art {
   }
 }
 
-/* CORREÇÃO: impede que a capa seja achatada em janelas compactas */
+/* Impede que a capa seja achatada em janelas compactas */
 .now-playing img.track-art {
   flex-shrink: 0;
   aspect-ratio: 1 / 1;
   object-fit: cover;
 }
+
+/* =========================================================
+   MOBILE
+   Layout independente para celulares.
+   O layout desktop permanece inalterado.
+   ========================================================= */
+
+.app.is-mobile {
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: none;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 28px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Player mobile */
+.app.is-mobile .now-playing {
+  width: 100%;
+  min-width: 0;
+  min-height: auto;
+  height: auto;
+  flex: 0 0 auto;
+  padding: 12px 0 0;
+  justify-content: flex-start;
+  align-items: center;
+  overflow: visible;
+}
+
+/* Rótulo do player */
+.app.is-mobile .now-playing > .section-label {
+  margin: 0 0 18px !important;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+/* Capa */
+.app.is-mobile .track-art,
+.app.is-mobile img.track-art {
+  width: min(58vw, 220px);
+  height: min(58vw, 220px);
+  flex-shrink: 0;
+}
+
+.app.is-mobile .track-art {
+  margin: 0 auto 20px;
+  font-size: 65px;
+}
+
+/* Símbolo musical nas capas sem imagem: igual ao desktop */
+.app.is-mobile .track-art span,
+.app.is-mobile .mini-art span {
+  color: #b79bff;
+  font-family: Arial, sans-serif;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.app.is-mobile .track-art span {
+  font-size: 65px;
+}
+
+.app.is-mobile .mini-art span {
+  font-size: 20px;
+}
+
+/* Informações da música */
+.app.is-mobile .track-info {
+  width: 100%;
+  max-width: 440px;
+}
+
+.app.is-mobile .track-info h2 {
+  font-size: clamp(19px, 5vw, 25px);
+  overflow-wrap: anywhere;
+}
+
+.app.is-mobile .track-info p {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* Progresso */
+.app.is-mobile .progress {
+  width: 100%;
+  max-width: 440px;
+  margin: 24px auto;
+}
+
+.app.is-mobile .progress-time {
+  font-size: 11px;
+}
+
+/* Controles: restaurados mesmo em telas pequenas */
+.app.is-mobile .controls {
+  width: 100%;
+  display: flex !important;
+  gap: clamp(22px, 7vw, 34px);
+  justify-content: center;
+}
+
+.app.is-mobile .control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  padding: 8px;
+}
+
+.app.is-mobile .play-button {
+  width: 54px;
+  height: 54px;
+}
+
+.app.is-mobile .shuffle-button {
+  display: block !important;
+}
+
+/* Visualizer leve exclusivo do mobile */
+.mobile-visualizer {
+  position: relative;
+  width: min(100%, 250px);
+  height: 42px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mobile-visualizer span {
+  display: block;
+  width: 4px;
+  height: 8px;
+  flex: 1;
+  max-width: 7px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to top,
+    #8257e5,
+    #bd9cff
+  );
+  box-shadow: 0 0 9px rgba(154, 117, 245, 0.45);
+  animation: mobile-visualizer-wave 1.1s ease-in-out infinite;
+  animation-delay: calc(var(--bar-index) * -0.09s);
+}
+
+@keyframes mobile-visualizer-wave {
+  0%,
+  100% {
+    height: 8px;
+    opacity: 0.55;
+  }
+
+  50% {
+    height: 34px;
+    opacity: 1;
+  }
+}
+
+/* Fila mobile */
+.app.is-mobile .queue-section {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 220px;
+  flex: 0 0 auto;
+  align-self: stretch;
+  padding: 18px 14px;
+  overflow: visible;
+  border-radius: 15px;
+  background: rgba(25, 25, 31, 0.75);
+}
+
+/* Cabeçalho da fila */
+.app.is-mobile .queue-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.app.is-mobile .queue-header h2 {
+  display: block;
+  margin: 5px 0 0;
+  font-size: 18px;
+}
+
+.app.is-mobile .queue-header .section-label {
+  font-size: 10px;
+}
+
+.app.is-mobile .queue-header p {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+/* Botão de embaralhar */
+.app.is-mobile .shuffle-button {
+  padding: 9px 12px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
+/* Lista: a rolagem fica na página, não dentro da fila */
+.app.is-mobile .queue-list {
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible;
+  gap: 5px;
+}
+
+/* Itens da fila */
+.app.is-mobile .queue-item {
+  min-height: 52px;
+  gap: 11px;
+  padding: 8px 6px;
+}
+
+.app.is-mobile .queue-number {
+  width: 17px;
+  font-size: 12px;
+}
+
+.app.is-mobile .mini-art,
+.app.is-mobile img.mini-art {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.app.is-mobile .queue-track-info {
+  gap: 4px;
+}
+
+.app.is-mobile .queue-track-info strong {
+  font-size: 13px;
+}
+
+.app.is-mobile .queue-track-info span {
+  font-size: 11px;
+}
+
+.app.is-mobile .duration {
+  font-size: 11px;
+}
+
+.app.is-mobile .drag-handle {
+  font-size: 18px;
+}
+
+.app.is-mobile .queue-hint {
+  display: block;
+  margin-top: 14px;
+  font-size: 10px;
+}
+
+/* Rodapé */
+.app.is-mobile footer {
+  display: block;
+  flex: 0 0 auto;
+  padding: 0 0 8px;
+  font-size: 10px;
+}
+
+/* Loading mobile */
+.app.is-mobile.is-loading {
+  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.app.is-mobile.is-loading .now-playing {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  justify-content: center;
+}
+
+.app.is-mobile.is-loading .now-playing > :not(.visualizer) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app.is-mobile.is-loading .mobile-visualizer {
+  width: min(75vw, 300px);
+  height: 55px;
+  margin: 0;
+}
+
+.app.is-mobile.is-loading .mobile-visualizer span {
+  height: 10px;
+  animation-duration: 1.4s;
+}
+
+.app.is-mobile.is-loading .queue-section,
+.app.is-mobile.is-loading footer,
+.app.is-mobile.is-loading .activity-error {
+  display: none;
+}
+
+/* Telas mobile menores */
+@media (max-width: 380px) {
+  .app.is-mobile {
+    padding: 20px 12px;
+    gap: 22px;
+  }
+
+  .app.is-mobile .track-art,
+  .app.is-mobile img.track-art {
+    width: min(62vw, 190px);
+    height: min(62vw, 190px);
+  }
+
+  .app.is-mobile .track-info h2 {
+    font-size: 19px;
+  }
+
+  .app.is-mobile .controls {
+    gap: 18px;
+  }
+
+  .app.is-mobile .control-button {
+    font-size: 22px;
+  }
+
+  .app.is-mobile .play-button {
+    width: 49px;
+    height: 49px;
+  }
+
+  .app.is-mobile .queue-section {
+    padding: 15px 10px;
+  }
+
+  .app.is-mobile .queue-item {
+    gap: 8px;
+  }
+}
+
+/* Respeita a preferência por movimento reduzido */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-visualizer span {
+    animation: none;
+    height: 12px;
+    opacity: 0.8;
+  }
+}
+

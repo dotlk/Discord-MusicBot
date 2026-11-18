@@ -36,7 +36,20 @@ function TrackImage({ src, className = "" }) {
     if (!thumbnailUrl || failed) {
         return (
             <div className={className}>
-                <span>♫</span>
+                <svg
+                    className="track-image-fallback-icon"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    style={{
+                        width: "1.6em",
+                        height: "1.6em",
+                        display: "block"
+                    }}
+                >
+                    <path d="M12 3v12.2a3.5 3.5 0 1 1-2-3.16V6.2l10-2.5v11.5a3.5 3.5 0 1 1-2-3.16V3.5L12 5z" />
+                </svg>
             </div>
         );
     }
@@ -51,7 +64,7 @@ function TrackImage({ src, className = "" }) {
     );
 }
 
-/* Visualizador de áudio com detecção de batidas */
+/* Visualizador de áudio com detecção de batidas (PC) */
 function AudioVisualizer({ bandsRef }) {
     const barsRef = useRef([]);
     const visualizerRef = useRef(null);
@@ -266,6 +279,22 @@ function AudioVisualizer({ bandsRef }) {
     );
 }
 
+/* Visualizador leve exclusivo do mobile */
+function MobileVisualizer() {
+    return (
+        <div className="mobile-visualizer" aria-hidden="true">
+            {Array.from({ length: 12 }, (_, index) => (
+                <span
+                    key={index}
+                    style={{
+                        "--bar-index": index
+                    }}
+                />
+            ))}
+        </div>
+    );
+}
+
 export default function App() {
     const socketRef = useRef(null);
 
@@ -305,6 +334,31 @@ export default function App() {
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
+
+    /* Detecta dispositivos móveis sem confundir com janelas estreitas no PC */
+    const [isMobile, setIsMobile] = useState(() =>
+        window.matchMedia(
+            "(max-width: 600px) and (pointer: coarse)"
+        ).matches
+    );
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia(
+            "(max-width: 600px) and (pointer: coarse)"
+        );
+
+        const updateMobileMode = event => {
+            setIsMobile(event.matches);
+        };
+
+        setIsMobile(mediaQuery.matches);
+
+        mediaQuery.addEventListener("change", updateMobileMode);
+
+        return () => {
+            mediaQuery.removeEventListener("change", updateMobileMode);
+        };
+    }, []);
 
     useEffect(() => {
         if (playbackStatus !== "playing") return;
@@ -466,9 +520,6 @@ export default function App() {
                             /*
                              * O loading só termina quando a próxima música
                              * realmente começa a tocar.
-                             *
-                             * Um estado intermediário sem música não encerra
-                             * o loading enquanto o bot resolve a próxima faixa.
                              */
                             if (
                                 nextTrack &&
@@ -580,7 +631,6 @@ export default function App() {
                         setProcessingNext(false);
                         setProcessingAutoNext(false);
 
-                        // Evita manter a tela de loading em caso de erro.
                         setLoading(false);
                     }
                 });
@@ -857,9 +907,17 @@ export default function App() {
             : 0;
 
     return (
-        <main className={`app ${loading ? "is-loading" : ""}`}>
+        <main
+            className={`app ${loading ? "is-loading" : ""} ${
+                isMobile ? "is-mobile" : ""
+            }`}
+        >
             <section className="now-playing">
-                <AudioVisualizer bandsRef={visualizerBandsRef} />
+                {loading || !isMobile ? (
+                    <AudioVisualizer bandsRef={visualizerBandsRef} />
+                ) : (
+                    <MobileVisualizer />
+                )}
 
                 <div className="section-label">TOCANDO AGORA</div>
 
@@ -986,7 +1044,21 @@ export default function App() {
                         }
                         title="Próxima música"
                     >
-                        ⏭
+                        <svg
+                            className="skip-icon"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            aria-hidden="true"
+                            style={{
+                                width: "1em",
+                                height: "1em",
+                                display: "block"
+                            }}
+                        >
+                            <path d="M5 5.5a1 1 0 0 1 1.52-.85l8.2 5.5a2.2 2.2 0 0 1 0 3.7l-8.2 5.5A1 1 0 0 1 5 18.5z" />
+                            <path d="M17 5h2v14h-2z" />
+                        </svg>
                     </button>
                 </div>
             </section>
@@ -1069,7 +1141,7 @@ export default function App() {
             </section>
 
             <footer>
-                BicodeMel <span>•</span> Music for your server
+                Music for your server
                 <span> • </span>
                 {connected ? "Conectado" : "Desconectado"}
             </footer>
